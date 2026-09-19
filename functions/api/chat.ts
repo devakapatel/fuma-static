@@ -10,6 +10,18 @@ interface PagesFunction<Env = unknown> {
   (args: { request: Request; env: Env; ctx: { waitUntil: (promise: Promise<unknown>) => void } }): Promise<Response> | Response;
 }
 
+export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+  return new Response(
+    JSON.stringify({
+      CHAT_ENDPOINT: env.CHAT_ENDPOINT ? 'SET' : 'MISSING',
+      CHAT_MODEL: env.CHAT_MODEL ? 'SET' : 'MISSING',
+      CHAT_ENDPOINT_VALUE: env.CHAT_ENDPOINT,
+      CHAT_MODEL_VALUE: env.CHAT_MODEL,
+    }),
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+};
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
     // Validate environment variables
@@ -21,6 +33,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
+    console.log('CHAT_ENDPOINT:', env.CHAT_ENDPOINT);
+    console.log('CHAT_MODEL:', env.CHAT_MODEL);
+
     const body = await request.json();
     const { messages } = body;
 
@@ -31,23 +46,39 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
-    console.log('CHAT_ENDPOINT:', env.CHAT_ENDPOINT);
-    console.log('CHAT_MODEL:', env.CHAT_MODEL);
-    console.log('Messages:', JSON.stringify(messages));
-
-    const openai = createOpenAI({
-      baseURL: env.CHAT_ENDPOINT,
-      apiKey: 'not-needed',
-    });
-
-    const result = streamText({
-      model: openai(env.CHAT_MODEL),
-      messages,
-      temperature: 0.7,
-    });
-
-    return result.toUIMessageStreamResponse({
+    // Call the upstream API directly to see the actual error
+    const upstreamResponse = await fetch(env.CHAT_ENDPOINT + '/chat/completions', {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: env.CHAT_MODEL,
+        messages,
+        temperature: 0.7,
+        max_tokens: 1000,
+        stream: true,
+      }),
+    });
+
+    console.log('Upstream response status:', upstreamResponse.status);
+    console.log('Upstream response headers:', Object.fromEntries(upstreamResponse.headers.entries()));
+
+    if (!upstreamResponse.ok) {
+      const errorText = await upstreamResponse.text();
+      console.error('Upstream error:', errorText);
+      return new Response(
+        JSON.stringify({ error: 'Upstream API error', status: upstreamResponse.status, details: errorText }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Stream the response back
+    return new Response(upstreamResponse.body, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
