@@ -31,6 +31,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
+    console.log('CHAT_ENDPOINT:', env.CHAT_ENDPOINT);
+    console.log('CHAT_MODEL:', env.CHAT_MODEL);
+    console.log('Messages:', JSON.stringify(messages));
+
     const openai = createOpenAI({
       baseURL: env.CHAT_ENDPOINT,
       apiKey: 'not-needed',
