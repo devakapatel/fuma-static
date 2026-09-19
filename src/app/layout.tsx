@@ -1,7 +1,7 @@
 import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import type { Metadata } from 'next';
 import { Provider } from '@/components/provider';
-import { appEmoji } from '@/lib/shared';
+import { appName, appEmoji } from '@/lib/shared';
 import './global.css';
 
 const plexSans = IBM_Plex_Sans({
@@ -24,6 +24,12 @@ const plexMono = IBM_Plex_Mono({
 const emojiFavicon = `data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>${appEmoji}</text></svg>`;
 
 export const metadata: Metadata = {
+  title: {
+    // per-page titles resolve to e.g. "Hello World | T9" at build time
+    template: `%s | ${appName}`,
+    // pages without their own title (e.g. home)
+    default: appName,
+  },
   icons: {
     icon: [
       {
