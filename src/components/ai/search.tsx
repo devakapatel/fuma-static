@@ -12,9 +12,10 @@ import {
   useState,
 } from 'react';
 import { flushSync } from 'react-dom';
-import { ChevronDown, Loader2, MessageCircleIcon, RefreshCw, SearchIcon, Send, X } from 'lucide-react';
+import { ChevronDown, Check, Loader2, MessageCircleIcon, RefreshCw, SearchIcon, Send, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { buttonVariants } from '../ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'fumadocs-ui/components/ui/popover';
 import { useChat, type UseChatHelpers } from '@ai-sdk/react';
 import { DefaultChatTransport, type Tool, type UIMessage, type UIToolInvocation } from 'ai';
 import { Markdown } from '../markdown';
@@ -96,9 +97,17 @@ function useSelectedModel(): [string, (id: string) => void] {
   return [model, select];
 }
 
-const ModelPicker = () => {
+function shortModelName(model: ChatModel): string {
+  // "inclusionAI: Ling 3.0 Flash VL (free)" -> "Ling 3.0 Flash VL"
+  const name = model.name.includes(':') ? model.name.split(':').slice(1).join(':').trim() : model.name;
+  return name.replace(/\s*\(free\)\s*$/i, '');
+}
+
+function ModelPicker({ className }: { className?: string }) {
   const { models, error } = useChatModels();
   const [model, select] = useSelectedModel();
+
+  const current = models.find((m) => m.id === model);
 
   // keep persisted selection valid; fall back if the model disappeared
   useEffect(() => {
@@ -107,37 +116,48 @@ const ModelPicker = () => {
     }
   }, [models, model]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error || models.length === 0) {
-    return (
-      <select
-        aria-label="Model"
-        className="max-w-[140px] truncate rounded-md px-2 py-1 text-xs text-fd-muted-foreground bg-fd-background border"
-        value={model}
-        disabled
-      >
-        <option>{model.split('/').pop()?.replace(':free', '') || 'model'}</option>
-      </select>
-    );
-  }
-
   return (
-    <div className="relative inline-flex items-center">
-      <select
-        aria-label="Model"
-        className="max-w-[180px] appearance-none truncate rounded-md border bg-fd-background py-1 ps-2 pe-6 text-xs text-fd-muted-foreground hover:text-fd-foreground"
-        value={model}
-        onChange={(e) => select(e.target.value)}
+    <Popover>
+      <PopoverTrigger
+        aria-label="Choose a model"
+        className={(s) =>
+          cn(
+            buttonVariants({ variant: 'secondary', size: 'sm', className: 'gap-1.5 text-xs' }),
+            s.open && 'bg-fd-accent',
+            className,
+          )
+        }
       >
-        {models.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.name}
-          </option>
+        <span className="max-w-[140px] truncate">
+          {current ? shortModelName(current) : (model.split('/').pop()?.replace(':free', '') ?? 'Model')}
+        </span>
+        <ChevronDown className="size-3.5 text-fd-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverContent className="flex flex-col gap-0.5 p-1">
+        <p className="p-2 text-xs font-medium text-fd-muted-foreground">
+          {error || models.length === 0 ? 'Failed to load models' : 'Choose a model'}
+        </p>
+        {models.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            title={item.id}
+            className={cn(
+              'flex items-center gap-1.5 px-2 py-1.5 text-start text-sm rounded-lg transition-colors',
+              item.id === model
+                ? 'bg-fd-primary/10 text-fd-primary'
+                : 'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground',
+            )}
+            onClick={() => select(item.id)}
+          >
+            <span className="flex-1 truncate">{shortModelName(item)}</span>
+            {item.id === model && <Check className="size-3.5 shrink-0" />}
+          </button>
         ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute end-1.5 size-3.5 text-fd-muted-foreground" />
-    </div>
+      </PopoverContent>
+    </Popover>
   );
-};
+}
 
 const Context = createContext<{
   open: boolean;
