@@ -323,7 +323,7 @@ export function AISearch({ children }: { children: ReactNode }) {
   const chat = useChat<ChatUIMessage>({
     id: 'search',
     transport: new DefaultChatTransport({
-      api: process.env.NEXT_PUBLIC_CHAT_URL ?? '/api/chat',
+      api: process.env.NEXT_PUBLIC_CHAT_API_URL ?? '/api/chat',
     }),
   });
 
