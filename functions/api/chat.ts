@@ -1,5 +1,18 @@
+// AI chat backend for Cloudflare Pages Functions.
+//
+// Architecture (scales to hundreds of long pages — no in-memory corpus):
+//  - search_docs tool -> /api/search-query (static ZBSearch index, loaded
+//    once per isolate, index-only footprint)
+//  - read_page tool   -> /llms.mdx/docs/[...slug]/content.md (static md),
+//    split into sections by `## ` headings so the model can pull only
+//    what it needs
+//  - current page -> injected up front but truncated, with a pointer to
+//    read_page for the rest
+//
+// The model decides what to fetch via tool calls (bounded by maxSteps).
+
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText } from 'ai';
+import { streamText, tool, stepCountIs, convertToModelMessages, createUIMessageStreamResponse, toUIMessageStream } from 'ai';
 import { z } from 'zod';
 
 interface Env {
@@ -12,159 +25,145 @@ interface PagesFunction<Env = unknown> {
   (args: { request: Request; env: Env; ctx: { waitUntil: (promise: Promise<unknown>) => void } }): Promise<Response> | Response;
 }
 
-// Search the existing ZBSearch API
-async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
-  const response = await fetch(`${siteUrl}/api/search?q=${encodeURIComponent(query)}&limit=${limit}`);
-  if (!response.ok) {
-    throw new Error(`Search failed: ${response.status}`);
-  }
-  const data = await response.json();
-  
-  const docsObj = data.docs?.docs || {};
-  const docsArray = Object.values(docsObj);
-  
-  return docsArray
-    .slice(0, limit)
-    .map((doc: any, idx: number) => {
-      const title = doc.title || doc.name || doc.heading || doc.breadcrumbs?.[0] || doc.content?.split('\n')[0] || 'Untitled';
-      const url = doc.url || doc.href || doc.link || '';
-      const content = doc.content || doc.text || doc.body || '';
-      
-      return {
-        title,
-        url,
-        content,
-        score: doc._score || doc.score || 0,
-      };
-    })
-    .filter((r: any) => r.content && r.content.length > 0);
+const MAX_CURRENT_PAGE_CHARS = 6000;
+const MAX_SECTION_CHARS = 6000;
+const MAX_STEP_COUNT = 6;
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
-// Fetch page markdown content from llms.mdx
+// ---------- search_docs ----------
+
+interface SearchHit {
+  title: string;
+  url: string;
+  content: string;
+  score: number;
+}
+
+async function searchDocs(siteUrl: string, query: string, limit: number): Promise<SearchHit[]> {
+  const res = await fetch(
+    `${siteUrl}/api/search-query?q=${encodeURIComponent(query)}&limit=${limit}`,
+  );
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  const data = (await res.json()) as { results?: SearchHit[] };
+  // Return title/url/snippet only — keep tool output small
+  return (data.results ?? []).map((r) => ({
+    title: r.title,
+    url: r.url,
+    content: r.content.slice(0, 300),
+    score: r.score,
+  }));
+}
+
+// ---------- read_page (sections on demand) ----------
+
+interface PageSection {
+  index: number;
+  heading: string;
+  chars: number;
+}
+
+function splitSections(markdown: string): PageSection[] {
+  const lines = markdown.split('\n');
+  const sections: PageSection[] = [];
+  let heading = '(introduction)';
+  let buffer: string[] = [];
+  let index = 0;
+
+  const flush = () => {
+    const text = buffer.join('\n').trim();
+    if (text.length > 0) sections.push({ index: index++, heading, chars: text.length });
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    if (/^##\s+/.test(line)) {
+      flush();
+      heading = line.replace(/^##\s+/, '').trim();
+    }
+    buffer.push(line);
+  }
+  flush();
+  return sections;
+}
+
 async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string> {
-  const cleanSlug = slug.startsWith('/') ? slug.slice(1) : slug;
-  const url = `${siteUrl}/llms.mdx/docs/${cleanSlug}/content.md`;
-  
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch page: ${response.status}`);
-  }
-  return await response.text();
+  const cleanSlug = slug.replace(/^\/+|\/+$/g, '');
+  const res = await fetch(`${siteUrl}/llms.mdx/docs/${cleanSlug}/content.md`);
+  if (!res.ok) throw new Error(`Failed to fetch page '${slug}': ${res.status}`);
+  return res.text();
 }
 
-const systemPrompt = `You are an AI assistant for a documentation site. 
-You have access to the documentation content through search results provided in the context.
-Ground your answers in the documentation and cite sources with URLs.
-If you cannot find the answer in the provided context, say you don't know and suggest a better search query.`;
-
-interface Env {
-  CHAT_ENDPOINT: string;
-  CHAT_MODEL: string;
-  SITE_URL?: string;
+function pageUrlFromSlug(slug: string): string {
+  const clean = slug.replace(/^\/+|\/+$/g, '').replace(/(^|\/)index$/, '');
+  return `/docs${clean ? `/${clean}` : ''}`;
 }
 
-interface PagesFunction<Env = unknown> {
-  (args: { request: Request; env: Env; ctx: { waitUntil: (promise: Promise<unknown>) => void } }): Promise<Response> | Response;
-}
+// ---------- health check ----------
 
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
-  return new Response(
-    JSON.stringify({
-      CHAT_ENDPOINT: env.CHAT_ENDPOINT ? 'SET' : 'MISSING',
-      CHAT_MODEL: env.CHAT_MODEL ? 'SET' : 'MISSING',
-      SITE_URL: env.SITE_URL ? 'SET' : 'MISSING',
-    }),
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  return json({
+    CHAT_ENDPOINT: env.CHAT_ENDPOINT ? 'SET' : 'MISSING',
+    CHAT_MODEL: env.CHAT_MODEL ? 'SET' : 'MISSING',
+    SITE_URL: env.SITE_URL ? 'SET' : 'MISSING',
+  });
 };
+
+// ---------- chat ----------
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
     if (!env.CHAT_ENDPOINT || !env.CHAT_MODEL) {
-      console.error('Missing required env vars: CHAT_ENDPOINT, CHAT_MODEL');
-      return new Response(
-        JSON.stringify({ error: 'Server configuration error: missing CHAT_ENDPOINT or CHAT_MODEL' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
+      return json({ error: 'Server configuration error: missing CHAT_ENDPOINT or CHAT_MODEL' }, 500);
     }
 
     const siteUrl = env.SITE_URL || 'https://fuma-static.pages.dev';
-
     const body = await request.json();
-    const { messages, currentPage } = body;
+    const uiMessages = body.messages;
 
-    console.log('Received messages:', JSON.stringify(messages, null, 2));
-    console.log('Current page:', currentPage);
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid request: messages array required and must not be empty' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+    if (!Array.isArray(uiMessages) || uiMessages.length === 0) {
+      return json({ error: 'Invalid request: messages array required and must not be empty' }, 400);
     }
 
-    // Convert AI SDK message format to standard OpenAI format
-    const formattedMessages = messages.map((msg: any) => {
-      if (msg.content) {
-        return { role: msg.role, content: msg.content };
-      }
-      if (msg.parts && Array.isArray(msg.parts)) {
-        const text = msg.parts
-          .filter((p: any) => p.type === 'text')
-          .map((p: any) => p.text)
-          .join('');
-        return { role: msg.role, content: text };
-      }
-      return { role: msg.role, content: '' };
-    }).filter((msg: any) => msg.content && msg.content.trim().length > 0);
+    // Current page URL, sent by the client as a `data-client` part
+    const clientLocation: string | undefined = uiMessages
+      .at(-1)
+      ?.parts?.find((p: { type?: string }) => p.type === 'data-client')?.data?.location;
 
-    console.log('Formatted messages:', JSON.stringify(formattedMessages, null, 2));
-
-    if (formattedMessages.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'No valid messages with content' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get the user's last message for search
-    const lastUserMessage = formattedMessages
-      .filter(m => m.role === 'user')
-      .pop();
-
-    // Do search upfront based on the user's question
-    let searchContext = '';
-    if (lastUserMessage) {
-      try {
-        const searchResults = await searchDocs(siteUrl, lastUserMessage.content, 10);
-        if (searchResults.length > 0) {
-          searchContext = '\n\n--- Documentation Search Results ---\n';
-          searchResults.forEach((result, idx) => {
-            searchContext += `\n[${idx + 1}] ${result.title} (${result.url})\n${result.content}\n`;
-          });
-        }
-      } catch (error) {
-        console.error('Search error:', error);
-      }
-    }
-
-    // Fetch current page content if provided
     let currentPageContext = '';
-    if (currentPage) {
+    if (clientLocation) {
       try {
-        const pageContent = await fetchPageMarkdown(siteUrl, currentPage);
-        currentPageContext = `\n\n--- Current Page Content (${currentPage}) ---\n${pageContent}`;
+        const path = new URL(clientLocation, siteUrl).pathname;
+        const match = path.match(/^\/docs\/?(.*)$/);
+        if (match) {
+          const slug = match[1] || 'index';
+          const markdown = await fetchPageMarkdown(siteUrl, slug);
+          const truncated =
+            markdown.length > MAX_CURRENT_PAGE_CHARS
+              ? `${markdown.slice(0, MAX_CURRENT_PAGE_CHARS)}\n\n[... page truncated, ${markdown.length} chars total. Use the read_page tool to see specific sections.]`
+              : markdown;
+          currentPageContext = `The user is currently viewing: ${pageUrlFromSlug(slug)}\n\n${truncated}`;
+        }
       } catch (error) {
         console.error('Current page fetch error:', error);
       }
     }
 
-    const systemPrompt = `You are an AI assistant for a documentation site. 
-You have access to the documentation content through search results provided in the context.
-Ground your answers in the documentation and cite sources with URLs.
-If you cannot find the answer in the provided context, say you don't know and suggest a better search query.
-${searchContext}
-${currentPageContext}`;
+    const systemPrompt = [
+      'You are an AI assistant for a documentation site.',
+      'Use the `search_docs` tool to find relevant pages before answering questions that are not about the current page.',
+      'Use the `read_page` tool to read a full page or a specific section of a page before answering from it.',
+      'Ground your answers in the documentation and cite sources as markdown links using page URLs.',
+      'If you cannot find the answer in the docs, say you do not know and suggest a better search query.',
+      currentPageContext ? `\n# Current Page\n\n${currentPageContext}` : '',
+    ]
+      .join('\n')
+      .trim();
 
     const result = streamText({
       model: createOpenAI({
@@ -172,11 +171,79 @@ ${currentPageContext}`;
         apiKey: 'not-needed',
       })(env.CHAT_MODEL),
       system: systemPrompt,
-      messages: formattedMessages,
+      messages: await convertToModelMessages(uiMessages, {
+        convertDataPart(part) {
+          if (part.type === 'data-client') {
+            return {
+              type: 'text',
+              text: `[Client Context: ${JSON.stringify(part.data)}]`,
+            };
+          }
+        },
+      }),
+      stopWhen: stepCountIs(MAX_STEP_COUNT),
+      tools: {
+        search_docs: tool({
+          description: 'Search the documentation. Returns page titles, URLs and short snippets. Use read_page to get full content of a promising result.',
+          inputSchema: z.object({
+            query: z.string().describe('The search query'),
+            limit: z.number().int().min(1).max(20).default(5).describe('Max results to return'),
+          }),
+          execute: async ({ query, limit }) => searchDocs(siteUrl, query, limit),
+        }),
+        read_page: tool({
+          description: 'Read a documentation page as markdown. Without section, returns the table of sections (headings + sizes) plus the first part; pass a section index to read one section in full.',
+          inputSchema: z.object({
+            slug: z.string().describe('Page slug without /docs prefix, e.g. "test" or "" for the docs root'),
+            section: z.number().int().min(0).optional().describe('Index of the section to read (from the section list)'),
+          }),
+          execute: async ({ slug, section }) => {
+            const markdown = await fetchPageMarkdown(siteUrl, slug);
+            const sections = splitSections(markdown);
+
+            if (section === undefined) {
+              return {
+                url: pageUrlFromSlug(slug),
+                totalChars: markdown.length,
+                sections,
+                preview: markdown.slice(0, MAX_SECTION_CHARS),
+              };
+            }
+
+            // Re-split keeping content, then return the requested one
+            const lines = markdown.split('\n');
+            const chunks: { heading: string; text: string[] }[] = [];
+            let heading = '(introduction)';
+            let buffer: string[] = [];
+            for (const line of lines) {
+              if (/^##\s+/.test(line)) {
+                chunks.push({ heading, text: buffer });
+                heading = line.replace(/^##\s+/, '').trim();
+                buffer = [];
+              }
+              buffer.push(line);
+            }
+            chunks.push({ heading, text: buffer });
+
+            const picked = chunks[section];
+            if (!picked) return { error: `Section ${section} not found. Available sections: 0..${chunks.length - 1}` };
+
+            const text = picked.text.join('\n').trim();
+            return {
+              url: pageUrlFromSlug(slug),
+              heading: picked.heading,
+              truncated: text.length > MAX_SECTION_CHARS,
+              content: text.slice(0, MAX_SECTION_CHARS),
+            };
+          },
+        }),
+      },
+      toolChoice: 'auto',
       temperature: 0.7,
     });
 
-    return result.toUIMessageStreamResponse({
+    return createUIMessageStreamResponse({
+      stream: toUIMessageStream({ stream: result.stream }),
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -185,12 +252,22 @@ ${currentPageContext}`;
     });
   } catch (error) {
     console.error('Chat error:', error);
-    const errorDetails = error instanceof Error 
-      ? { message: error.message, stack: error.stack, name: error.name }
-      : { error: String(error), type: typeof error };
-    return new Response(
-      JSON.stringify({ error: 'Internal server error', details: errorDetails }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    return json(
+      {
+        error: 'Internal server error',
+        details: error instanceof Error ? { message: error.message, name: error.name } : String(error),
+      },
+      500,
     );
   }
+};
+
+export const onRequestOptions: PagesFunction<Env> = async () => {
+  return new Response(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
 };
