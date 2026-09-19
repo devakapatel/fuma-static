@@ -14,3 +14,19 @@ html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
 }
+
+/*
+ * AI chat panel: LLM output frequently uses "loose" lists (blank line after
+ * `1. item`), which prose styles wrap in <p> with large top margins — that
+ * pushes list text below the number/marker. Keep marker and text on the
+ * same line inside the chat panel only (docs pages are unaffected).
+ */
+.ai-chat-prose li > p:first-child {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.ai-chat-prose li {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}

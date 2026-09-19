@@ -12,6 +12,7 @@ import { source } from '@/lib/source';
 import { docsRoute } from '@/lib/shared';
 import { Document, type DocumentData } from 'flexsearch';
 import { ChatUIMessage, SearchTool } from '../../../components/ai/search';
+import { buildSystemPrompt, chatTemperature, maxHistoryMessages } from '@/lib/ai-prompt';
 
 interface CustomDocument extends DocumentData {
   url: string;
@@ -63,13 +64,8 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-/** System prompt, you can update it to provide more specific information */
-const systemPrompt = [
-  'You are an AI assistant for a documentation site.',
-  'Use the `search` tool to retrieve relevant docs context before answering when needed.',
-  'The `search` tool returns raw JSON results from documentation. Use those results to ground your answer and cite sources as markdown links using the document `url` field when available.',
-  'If you cannot find the answer in search results, say you do not know and suggest a better search query.',
-].join('\n');
+/** System prompt shared with the production backend (functions/api/chat.ts) */
+const systemPrompt = buildSystemPrompt({ search: 'search' });
 
 /**
  * Resolve the docs page the user is currently viewing from their URL,
@@ -108,6 +104,9 @@ async function getCurrentPageContext(clientUrl: unknown): Promise<string | null>
 export async function POST(req: Request, ctx: RouteContext<"/api/chat">) {
   const reqJson = await req.json();
 
+  // cap conversation history sent to the model
+  const history = Array.isArray(reqJson.messages) ? reqJson.messages.slice(-maxHistoryMessages) : [];
+
   // the current page URL sent by the client as a `data-client` part
   const clientLocation = reqJson.messages?.at(-1)?.parts?.find(
     (part: { type?: string }) => part.type === 'data-client',
@@ -117,6 +116,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/chat">) {
 
   const result = streamText({
     model: openrouter.chat(process.env.OPENROUTER_MODEL ?? 'anthropic/claude-3.5-sonnet'),
+    temperature: chatTemperature,
     stopWhen: stepCountIs(5),
     tools: {
       search: searchTool,
@@ -128,7 +128,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/chat">) {
           ? `${systemPrompt}\n\n# Current Page Context\n\nThe user is currently viewing the page below. Use it directly for questions like "summarize this page" or "explain this".\n\n${currentPageContext}`
           : systemPrompt,
       },
-      ...(await convertToModelMessages<ChatUIMessage>(reqJson.messages ?? [], {
+      ...(await convertToModelMessages<ChatUIMessage>(history, {
         convertDataPart(part) {
           if (part.type === 'data-client')
             return {
@@ -147,13 +147,28 @@ export async function POST(req: Request, ctx: RouteContext<"/api/chat">) {
 }
 
 const searchTool = tool({
-  description: 'Search the docs content and return raw JSON results.',
+  description: 'Search the docs content. Returns pages with title, url, a content snippet and a relevance score.',
   inputSchema: z.object({
     query: z.string(),
     limit: z.number().int().min(1).max(100).default(10),
   }),
   async execute({ query, limit }) {
     const search = await searchServer;
-    return await search.searchAsync(query, { limit, merge: true, enrich: true });
+    const raw = await search.searchAsync(query, { limit, merge: true, enrich: true });
+
+    // normalize FlexSearch enriched results into a flat shape
+    // (same shape as the production backend's search_docs tool)
+    type RawHit = { document?: Partial<CustomDocument>; doc?: Partial<CustomDocument> } & Partial<CustomDocument>;
+    const results = Array.isArray(raw) ? (raw as RawHit[]) : ((raw as { results?: RawHit[] }).results ?? []);
+
+    return results.map((hit) => {
+      const doc: Partial<CustomDocument> = hit.document ?? hit.doc ?? hit;
+      return {
+        title: doc.title ?? 'Untitled',
+        url: doc.url ?? '',
+        content: (doc.content ?? '').slice(0, 300),
+        score: typeof hit.score === 'number' ? hit.score : 0,
+      };
+    });
   },
 }) satisfies SearchTool;

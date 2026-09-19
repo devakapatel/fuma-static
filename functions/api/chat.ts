@@ -14,6 +14,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, tool, stepCountIs, convertToModelMessages, createUIMessageStreamResponse, toUIMessageStream } from 'ai';
 import { z } from 'zod';
+import { buildSystemPrompt, chatTemperature, maxHistoryMessages } from '../../src/lib/ai-prompt';
 
 interface Env {
   CHAT_ENDPOINT: string;
@@ -28,11 +29,19 @@ interface PagesFunction<Env = unknown> {
 const MAX_CURRENT_PAGE_CHARS = 6000;
 const MAX_SECTION_CHARS = 6000;
 const MAX_STEP_COUNT = 6;
+const MAX_BODY_BYTES = 512 * 1024; // 512 KB request body cap
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // CORS on ALL responses — errors from the static site must not
+      // surface as opaque CORS failures in the browser
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
   });
 }
 
@@ -123,12 +132,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const siteUrl = env.SITE_URL || 'https://fuma-static.pages.dev';
+
+    // request guards: body size and history length
+    const contentLength = Number(request.headers.get('content-length') ?? '0');
+    if (contentLength > MAX_BODY_BYTES) {
+      return json({ error: 'Request body too large' }, 413);
+    }
+
     const body = await request.json();
-    const uiMessages = body.messages;
+    let uiMessages = body.messages;
 
     if (!Array.isArray(uiMessages) || uiMessages.length === 0) {
       return json({ error: 'Invalid request: messages array required and must not be empty' }, 400);
     }
+    uiMessages = uiMessages.slice(-maxHistoryMessages);
 
     // Current page URL, sent by the client as a `data-client` part
     const clientLocation: string | undefined = uiMessages
@@ -155,15 +172,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const systemPrompt = [
-      'You are an AI assistant for a documentation site.',
-      'Use the `search_docs` tool to find relevant pages before answering questions that are not about the current page.',
-      'Use the `read_page` tool to read a full page or a specific section of a page before answering from it.',
-      'Ground your answers in the documentation and cite sources as markdown links using page URLs.',
-      'If you cannot find the answer in the docs, say you do not know and suggest a better search query.',
-      currentPageContext ? `\n# Current Page\n\n${currentPageContext}` : '',
-    ]
-      .join('\n')
-      .trim();
+      buildSystemPrompt({ search: 'search_docs', readPage: 'read_page' }),
+      currentPageContext ? `\n\n# Current Page\n\n${currentPageContext}` : '',
+    ].join('');
 
     const result = streamText({
       model: createOpenAI({
@@ -239,7 +250,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         }),
       },
       toolChoice: 'auto',
-      temperature: 0.7,
+      temperature: chatTemperature,
     });
 
     return createUIMessageStreamResponse({
