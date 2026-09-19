@@ -84,7 +84,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       model: openai(env.CHAT_MODEL),
       messages: formattedMessages,
       temperature: 0.7,
-      maxTokens: 1000,
     });
 
     // Return UI message stream response - this produces the format the AI SDK client expects
