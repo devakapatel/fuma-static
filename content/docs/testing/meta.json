@@ -1,6 +1,0 @@
-{
-  "title": "Testing",
-  "description": "Pages for testing rendering and features",
-  "defaultOpen": true,
-  "pages": ["markdown-playground"]
-}

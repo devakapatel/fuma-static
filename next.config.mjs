@@ -6,6 +6,9 @@ const withMDX = createMDX();
 const config = {
   output: 'export',
   reactStrictMode: true,
+  // static export cannot run the image optimization API;
+  // serve images as-is (same as t9-fuma)
+  images: { unoptimized: true },
 };
 
 export default withMDX(config);
