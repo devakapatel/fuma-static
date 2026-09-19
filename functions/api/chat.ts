@@ -22,9 +22,10 @@ async function getDocsContent(env: Env): Promise<string> {
     return docsContentCache;
   }
 
-  // Fetch from the deployed site's llms-full.txt endpoint
-  const baseUrl = new URL(env.CHAT_ENDPOINT).origin;
-  const response = await fetch(`${baseUrl}/llms-full.txt`);
+  // Use the Pages deployment URL for docs content
+  // This should be set as an env var, fallback to the known Pages URL
+  const siteUrl = env.SITE_URL || 'https://fuma-static.pages.dev';
+  const response = await fetch(`${siteUrl}/llms-full.txt`);
   
   if (!response.ok) {
     throw new Error(`Failed to fetch docs content: ${response.status}`);
