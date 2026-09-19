@@ -18,7 +18,8 @@ const docs = defineDocs({
 
 // See https://fumadocs.dev/docs/headless/source-api for more info
 export const source = loader({
-  baseUrl: docsRoute,
+  // root-level slugs: /test, /hello-world, ...
+  baseUrl: '/',
   source: docs.toFumadocsSource(),
   plugins: [],
 });

@@ -2,6 +2,7 @@ import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import type { Metadata } from 'next';
 import { Provider } from '@/components/provider';
 import { appName, appEmoji } from '@/lib/shared';
+import 'katex/dist/katex.css';
 import './global.css';
 
 const plexSans = IBM_Plex_Sans({

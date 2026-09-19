@@ -4,10 +4,12 @@ import { notFound } from 'next/navigation';
 
 export const revalidate = false;
 
-export async function GET(_req: Request, { params }: RouteContext<'/llms.mdx/docs/[[...slug]]'>) {
+export async function GET(_req: Request, { params }: RouteContext<'/llms.mdx/[...slug]'>) {
   const { slug } = await params;
-  // remove the appended "content.md"
-  const page = source.getPage(slug?.slice(0, -1));
+  // remove the appended "content.md"; rewrite /llms.mdx/index.md to the docs root page
+  const slugs = slug?.slice(0, -1) ?? [];
+  if (slugs.at(-1) === 'index') slugs.pop();
+  const page = source.getPage(slugs);
   if (!page) notFound();
 
   return new Response(await docsLlms.page(page), {

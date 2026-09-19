@@ -1,0 +1,3 @@
+# Cloudflare Pages redirects: docs moved from /docs/* to root-level slugs
+/docs/* /:splat 301
+/docs / 301

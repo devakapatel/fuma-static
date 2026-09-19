@@ -1,0 +1,151 @@
+---
+title: Markdown Playground
+description: A tour of every markdown feature this site supports
+---
+
+This page exercises every markdown feature the site supports — use it to eyeball typography, code, tables, math, diagrams, and Fumadocs components in one place.
+
+## Text Formatting
+
+Regular paragraph with **bold**, *italic*, ***bold italic***, ~~strikethrough~~, `inline code`, and a [link to the About page](/about). You can also combine **bold with `code` inside** and _underscore italics_.
+
+Autolinks: https://github.com/devakapatel
+
+Hard line break below (two trailing spaces):
+like this —
+and this on a new line.
+
+> Blockquote with **bold** inside.
+> It can span multiple lines.
+>
+> > And it can be nested.
+
+## Lists
+
+Unordered list:
+
+- First item
+- Second item with `code`
+- Third item with a nested list:
+  - Nested A
+  - Nested B
+    - Deeply nested
+
+Ordered list (loose — blank lines between items, the tricky one for streaming renderers):
+
+1. Step one
+2. Step two
+3. Step three
+
+Task list:
+
+- [x] Ship the docs migration
+- [x] Fix list marker alignment
+- [ ] Write more docs
+
+## Code
+
+Inline: run `bun run dev` to start.
+
+Fenced with language:
+
+```ts
+interface DocsPage {
+  title: string;
+  slugs: string[];
+}
+
+export function slugify(input: string): string {
+  return input.toLowerCase().replace(/\s+/g, '-');
+}
+```
+
+```bash
+# deploy to cloudflare
+bun run build && npx wrangler pages deploy out
+```
+
+Fenced without language:
+
+```
+plain fenced block, no highlighting
+```
+
+Indented code block:
+
+    const indented = true;
+
+## Tables
+
+| Feature   | Status | Notes                     |
+| --------- | ------ | ------------------------- |
+| GFM table | ✅     | with alignment            |
+| Left      | Center | Right                     |
+| more      | data   | to test column stretching |
+
+## Math (KaTeX)
+
+Inline math: $E = mc^2$ and $c = \pm\sqrt{a^2 + b^2}$.
+
+Display math:
+
+$$
+\int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}
+$$
+
+## Mermaid Diagrams
+
+<Mermaid
+  chart={`
+graph TD;
+    A[Student] -->|asks question| B[T9 AI];
+    B --> C{Need context?};
+    C -->|current page| D[Inject page markdown];
+    C -->|other topic| E[search_docs tool];
+    E --> F[read_page tool];
+    D --> G[Answer with sources];
+    F --> G;
+  `}
+/>
+
+## Footnotes
+
+Here is a statement with a footnote[^1], and another[^note].
+
+[^1]: This is the first footnote.
+[^note]: Named footnotes work too.
+
+## Horizontal Rules
+
+---
+
+Above and below this line:
+
+---
+
+## Headings hierarchy (for the TOC)
+
+### Level 3 heading
+
+Some content under level 3.
+
+#### Level 4 heading
+
+Some content under level 4.
+
+##### Level 5 heading
+
+Level 5 is usually the deepest you want to go.
+
+## Fumadocs Components
+
+Cards (from the original template pages):
+
+<Cards>
+  <Card title="Read the docs" href="/test" description="A sibling page" />
+  <Card title="About" href="/about" description="Who runs this" />
+</Cards>
+
+## Long-form wrap test
+
+This is a very long unbroken-ish paragraph to check line wrapping and `verylongidentifierlikeconstmaxRenderingWidthForInlineCodeBlocks` inside prose, so nothing overflows the panel width on mobile. The quick brown fox jumps over the lazy dog while recursively validating bidirectional text rendering across the full document tree. The quick brown fox jumps over the lazy dog while recursively validating bidirectional text rendering across the full document tree.

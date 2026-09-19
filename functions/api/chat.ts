@@ -3,7 +3,7 @@
 // Architecture (scales to hundreds of long pages — no in-memory corpus):
 //  - search_docs tool -> /api/search-query (static ZBSearch index, loaded
 //    once per isolate, index-only footprint)
-//  - read_page tool   -> /llms.mdx/docs/[...slug]/content.md (static md),
+//  - read_page tool   -> /llms.mdx/[...slug]/content.md (static md),
 //    split into sections by `## ` headings so the model can pull only
 //    what it needs
 //  - current page -> injected up front but truncated, with a pointer to
@@ -103,14 +103,14 @@ function splitSections(markdown: string): PageSection[] {
 
 async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string> {
   const cleanSlug = slug.replace(/^\/+|\/+$/g, '');
-  const res = await fetch(`${siteUrl}/llms.mdx/docs/${cleanSlug}/content.md`);
+  const res = await fetch(`${siteUrl}/llms.mdx/${cleanSlug}/content.md`);
   if (!res.ok) throw new Error(`Failed to fetch page '${slug}': ${res.status}`);
   return res.text();
 }
 
 function pageUrlFromSlug(slug: string): string {
   const clean = slug.replace(/^\/+|\/+$/g, '').replace(/(^|\/)index$/, '');
-  return `/docs${clean ? `/${clean}` : ''}`;
+  return `/${clean}`;
 }
 
 // ---------- health check ----------
@@ -165,9 +165,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (clientLocation) {
       try {
         const path = new URL(clientLocation, siteUrl).pathname;
-        const match = path.match(/^\/docs\/?(.*)$/);
-        if (match) {
-          const slug = match[1] || 'index';
+        // docs pages live at root-level slugs; skip known non-docs paths
+        const isDocsPage =
+          path !== '/' &&
+          !path.startsWith('/api') &&
+          !path.startsWith('/llms') &&
+          !path.startsWith('/og');
+        if (isDocsPage) {
+          const slug = path.replace(/^\/+|\/+$/g, '') || 'index';
           const markdown = await fetchPageMarkdown(siteUrl, slug);
           const truncated =
             markdown.length > MAX_CURRENT_PAGE_CHARS
@@ -214,7 +219,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         read_page: tool({
           description: 'Read a documentation page as markdown. Without section, returns the table of sections (headings + sizes) plus the first part; pass a section index to read one section in full.',
           inputSchema: z.object({
-            slug: z.string().describe('Page slug without /docs prefix, e.g. "test" or "" for the docs root'),
+            slug: z.string().describe('Page slug, e.g. "test" or "index" for the docs root'),
             section: z.number().int().min(0).optional().describe('Index of the section to read (from the section list)'),
           }),
           execute: async ({ slug, section }) => {

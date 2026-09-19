@@ -1,4 +1,5 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
@@ -9,7 +10,6 @@ import {
 } from 'ai';
 import { z } from 'zod';
 import { source } from '@/lib/source';
-import { docsRoute } from '@/lib/shared';
 import { Document, type DocumentData } from 'flexsearch';
 import { ChatUIMessage, SearchTool } from '../../../components/ai/search';
 import { buildSystemPrompt, chatTemperature, maxHistoryMessages } from '@/lib/ai-prompt';
@@ -84,13 +84,20 @@ async function getCurrentPageContext(clientUrl: unknown): Promise<string | null>
     pathname = clientUrl.split('?')[0];
   }
 
-  if (!pathname.startsWith(`${docsRoute}/`) && pathname !== docsRoute) return null;
+  // docs pages live at root-level slugs (/test, /foo/bar); skip known non-docs paths
+  if (
+    pathname === '/' ||
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/llms') ||
+    pathname.startsWith('/og')
+  ) {
+    return null;
+  }
 
-  // strip the docs base path, e.g. `/docs/foo/bar` -> `['foo', 'bar']`
+  // `/foo/bar` -> `['foo', 'bar']` (the docs "index" page resolves to /index)
   const slugs = pathname
-    .slice(docsRoute.length)
     .split('/')
-    .filter((slug) => slug.length > 0 && slug !== 'index');
+    .filter((slug) => slug.length > 0);
 
   const page = source.getPage(slugs);
   if (!page || !('getText' in page.data)) return null;

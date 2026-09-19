@@ -3,9 +3,11 @@ import { createGetUrl } from 'fumadocs-core/source';
 export const appName = 'T9';
 export const appEmoji = '🏁';
 export const appTitle = `${appEmoji} ${appName}`;
-export const docsRoute = '/docs';
-export const docsImageRoute = '/og/docs';
-export const docsContentRoute = '/llms.mdx/docs';
+// docs live at root-level slugs: /test, /hello-world, ...
+// docsRoute is empty; the docs "index" page maps to /index
+export const docsRoute = '';
+export const docsImageRoute = '/og';
+export const docsContentRoute = '/llms.mdx';
 
 export const gitConfig = {
   user: 'devakapatel',

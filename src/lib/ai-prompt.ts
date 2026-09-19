@@ -41,7 +41,7 @@ export function buildSystemPrompt(toolNames: {
     '## Output format',
     '- Respond in clean GitHub-flavored markdown: short paragraphs, headings when helpful, lists when enumerating.',
     '- Always tag fenced code blocks with a language (e.g. ```ts).',
-    '- Use relative doc links (/docs/...) when linking pages of this site.',
+    '- Link pages using their root-level paths (e.g. /page-name) when citing this site\'s docs.',
     '- Keep answers concise; do not repeat the question back.',
   ]
     .filter((line) => line !== '')
