@@ -147,6 +147,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
     uiMessages = uiMessages.slice(-maxHistoryMessages);
 
+    // per-request model override (from the chat panel dropdown).
+    // Only free models (":free" suffix) may be selected by clients.
+    let model = env.CHAT_MODEL;
+    if (typeof body.model === 'string' && body.model.endsWith(':free')) {
+      model = body.model;
+    } else if (body.model !== undefined && body.model !== null) {
+      return json({ error: 'Invalid model: only free models are allowed' }, 400);
+    }
+
     // Current page URL, sent by the client as a `data-client` part
     const clientLocation: string | undefined = uiMessages
       .at(-1)
@@ -180,7 +189,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       model: createOpenAI({
         baseURL: env.CHAT_ENDPOINT,
         apiKey: 'not-needed',
-      })(env.CHAT_MODEL),
+      })(model),
       system: systemPrompt,
       messages: await convertToModelMessages(uiMessages, {
         convertDataPart(part) {

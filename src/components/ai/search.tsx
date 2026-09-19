@@ -12,7 +12,7 @@ import {
   useState,
 } from 'react';
 import { flushSync } from 'react-dom';
-import { Loader2, MessageCircleIcon, RefreshCw, SearchIcon, Send, X } from 'lucide-react';
+import { ChevronDown, Loader2, MessageCircleIcon, RefreshCw, SearchIcon, Send, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { buttonVariants } from '../ui/button';
 import { useChat, type UseChatHelpers } from '@ai-sdk/react';
@@ -44,6 +44,101 @@ export type ChatUIMessage = UIMessage<
 
 export type SearchTool = Tool<{ query: string; limit: number }>;
 
+// ---------- model selection ----------
+
+export interface ChatModel {
+  id: string;
+  name: string;
+}
+
+const StorageKeyModel = '__ai_chat_model';
+const FALLBACK_MODEL = 'deepseek/deepseek-v4-flash-0731:free';
+
+function useChatModels() {
+  const [models, setModels] = useState<ChatModel[]>([]);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const api = process.env.NEXT_PUBLIC_CHAT_API_URL ?? '/api/chat';
+    const modelsUrl = new URL(api.replace(/\/?chat$/, ''), window.location.origin);
+    // same origin as the chat API; local dev falls back to /api/models
+    const url =
+      api.startsWith('http')
+        ? `${new URL(api).origin}/api/models`
+        : '/api/models';
+
+    fetch(url)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((data: { models?: ChatModel[] }) => {
+        if (!cancelled) setModels(data.models ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { models, error };
+}
+
+function useSelectedModel(): [string, (id: string) => void] {
+  const [model, setModel] = useState(() => localStorage.getItem(StorageKeyModel) ?? FALLBACK_MODEL);
+
+  const select = (id: string) => {
+    setModel(id);
+    localStorage.setItem(StorageKeyModel, id);
+  };
+
+  return [model, select];
+}
+
+const ModelPicker = () => {
+  const { models, error } = useChatModels();
+  const [model, select] = useSelectedModel();
+
+  // keep persisted selection valid; fall back if the model disappeared
+  useEffect(() => {
+    if (models.length > 0 && !models.some((m) => m.id === model)) {
+      select(models[0].id);
+    }
+  }, [models, model]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (error || models.length === 0) {
+    return (
+      <select
+        aria-label="Model"
+        className="max-w-[140px] truncate rounded-md px-2 py-1 text-xs text-fd-muted-foreground bg-fd-background border"
+        value={model}
+        disabled
+      >
+        <option>{model.split('/').pop()?.replace(':free', '') || 'model'}</option>
+      </select>
+    );
+  }
+
+  return (
+    <div className="relative inline-flex items-center">
+      <select
+        aria-label="Model"
+        className="max-w-[180px] appearance-none truncate rounded-md border bg-fd-background py-1 ps-2 pe-6 text-xs text-fd-muted-foreground hover:text-fd-foreground"
+        value={model}
+        onChange={(e) => select(e.target.value)}
+      >
+        {models.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute end-1.5 size-3.5 text-fd-muted-foreground" />
+    </div>
+  );
+};
+
 const Context = createContext<{
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -62,7 +157,10 @@ export function AISearchPanelHeader({ className, ...props }: ComponentProps<'div
       {...props}
     >
       <div className="px-3 py-2 flex-1">
-        <p className="text-sm font-medium mb-2">AI Chat</p>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-sm font-medium">AI Chat</p>
+          <ModelPicker />
+        </div>
         <p className="text-xs text-fd-muted-foreground">
           AI can be inaccurate, please verify the answers.
         </p>
@@ -334,6 +432,15 @@ export function AISearch({ children }: { children: ReactNode }) {
     id: 'search',
     transport: new DefaultChatTransport({
       api: process.env.NEXT_PUBLIC_CHAT_API_URL ?? '/api/chat',
+      prepareSendMessagesRequest({ messages }) {
+        return {
+          body: {
+            messages,
+            // read per-request so dropdown changes apply immediately
+            model: localStorage.getItem(StorageKeyModel) ?? undefined,
+          },
+        };
+      },
     }),
   });
 
