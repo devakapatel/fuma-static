@@ -12,86 +12,61 @@ interface PagesFunction<Env = unknown> {
   (args: { request: Request; env: Env; ctx: { waitUntil: (promise: Promise<unknown>) => void } }): Promise<Response> | Response;
 }
 
-// Cache for the docs content
-let docsContentCache: string | null = null;
-let docsContentCacheTime = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-async function getDocsContent(env: Env): Promise<string> {
-  const now = Date.now();
-  if (docsContentCache && (now - docsContentCacheTime) < CACHE_TTL) {
-    return docsContentCache;
-  }
-
-  // Use the Pages deployment URL for docs content
-  // This should be set as an env var, fallback to the known Pages URL
-  const siteUrl = env.SITE_URL || 'https://fuma-static.pages.dev';
-  const response = await fetch(`${siteUrl}/llms-full.txt`);
-  
+// Search the existing ZBSearch API
+async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
+  const response = await fetch(`${siteUrl}/api/search?q=${encodeURIComponent(query)}&limit=${limit}`);
   if (!response.ok) {
-    throw new Error(`Failed to fetch docs content: ${response.status}`);
+    throw new Error(`Search failed: ${response.status}`);
   }
+  const data = await response.json();
   
-  docsContentCache = await response.text();
-  docsContentCacheTime = now;
-  return docsContentCache;
+  // Extract results from ZBSearch response
+  const docs = data.docs?.docs || [];
+  const internalIdToId = data.internalDocumentIDStore?.internalIdToId || [];
+  
+  return docs
+    .slice(0, limit)
+    .map((doc: any, idx: number) => ({
+      title: doc.title || 'Untitled',
+      url: doc.url || '',
+      content: doc.content || '',
+      score: doc._score || 0,
+    }))
+    .filter((r: any) => r.content && r.content.length > 0);
 }
 
-function searchDocs(content: string, query: string, limit: number = 5): Array<{ title: string; url: string; content: string }> {
-  const results: Array<{ title: string; url: string; content: string; score: number }> = [];
-  const queryLower = query.toLowerCase();
-  const queryTerms = queryLower.split(/\s+/).filter(t => t.length > 1);
+// Fetch page markdown content
+async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string> {
+  // Convert slug to the llms.mdx URL format
+  // e.g., "/docs/test" -> "/llms.mdx/docs/test/content.md"
+  const cleanSlug = slug.startsWith('/') ? slug.slice(1) : slug;
+  const url = `${siteUrl}/llms.mdx/docs/${cleanSlug}/content.md`;
   
-  // Split content by pages (each page starts with # Title (url))
-  const pages = content.split(/^# /m).slice(1); // Split by "# " at start of line
-  
-  for (const page of pages) {
-    const lines = page.split('\n');
-    if (lines.length === 0) continue;
-    
-    // First line is "Title (url)"
-    const headerMatch = lines[0].match(/^(.+?) \((.+?)\)$/);
-    if (!headerMatch) continue;
-    
-    const title = headerMatch[1].trim();
-    const url = headerMatch[1].trim(); // fallback
-    const urlMatch = lines[0].match(/\((.+?)\)$/);
-    const pageUrl = urlMatch ? urlMatch[1] : '';
-    
-    const pageContent = lines.slice(1).join('\n').trim();
-    const pageContentLower = pageContent.toLowerCase();
-    
-    // Score based on query term matches
-    let score = 0;
-    for (const term of queryTerms) {
-      // Count occurrences in content
-      const contentMatches = (pageContentLower.match(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-      score += contentMatches * 2;
-      
-      // Bonus for title matches
-      if (title.toLowerCase().includes(term)) {
-        score += 5;
-      }
-    }
-    
-    if (score > 0) {
-      // Extract relevant snippet
-      const snippetStart = Math.max(0, pageContentLower.indexOf(queryTerms[0] || '') - 100);
-      const snippet = pageContent.substring(snippetStart, snippetStart + 300);
-      
-      results.push({
-        title,
-        url: pageUrl,
-        content: snippet,
-        score
-      });
-    }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch page: ${response.status}`);
   }
-  
-  // Sort by score and return top results
-  return results
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  return await response.text();
+}
+
+const systemPrompt = `You are an AI assistant for a documentation site. 
+You MUST use the available tools to retrieve relevant documentation context before answering.
+Available tools:
+1. search - Search the documentation index for relevant pages
+2. getPage - Fetch the full markdown content of a specific page
+
+Always search first to find relevant pages, then use getPage to read full content if needed.
+Ground your answers in the documentation and cite sources with URLs.
+If you cannot find the answer, say you don't know.`;
+
+interface Env {
+  CHAT_ENDPOINT: string;
+  CHAT_MODEL: string;
+  SITE_URL?: string;
+}
+
+interface PagesFunction<Env = unknown> {
+  (args: { request: Request; env: Env; ctx: { waitUntil: (promise: Promise<unknown>) => void } }): Promise<Response> | Response;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
@@ -99,8 +74,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     JSON.stringify({
       CHAT_ENDPOINT: env.CHAT_ENDPOINT ? 'SET' : 'MISSING',
       CHAT_MODEL: env.CHAT_MODEL ? 'SET' : 'MISSING',
-      CHAT_ENDPOINT_VALUE: env.CHAT_ENDPOINT,
-      CHAT_MODEL_VALUE: env.CHAT_MODEL,
+      SITE_URL: env.SITE_URL ? 'SET' : 'MISSING',
     }),
     { headers: { 'Content-Type': 'application/json' } }
   );
@@ -115,6 +89,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
+
+    const siteUrl = env.SITE_URL || 'https://fuma-static.pages.dev';
 
     const body = await request.json();
     const { messages } = body;
@@ -152,30 +128,42 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
-    // Get docs content for search tool
-    let docsContent: string;
-    try {
-      docsContent = await getDocsContent(env);
-    } catch (e) {
-      console.error('Failed to fetch docs content:', e);
-      docsContent = '';
-    }
-
-    // Define search tool
+    // Define search tool - uses existing /api/search endpoint
     const searchTool = tool({
-      description: 'Search the documentation for relevant content',
+      description: 'Search the documentation for relevant pages. Returns matching pages with title, URL, and content snippets.',
       inputSchema: z.object({
         query: z.string().describe('Search query'),
         limit: z.number().int().min(1).max(10).default(5).describe('Maximum number of results'),
       }),
       execute: async ({ query, limit = 5 }) => {
         console.log('Search tool called with query:', query);
-        if (!docsContent) {
-          return { results: [], error: 'Documentation content not available' };
+        try {
+          const results = await searchDocs(siteUrl, query, limit);
+          console.log('Search results:', results.length, 'items found');
+          return { results };
+        } catch (error) {
+          console.error('Search error:', error);
+          return { results: [], error: String(error) };
         }
-        const results = searchDocs(docsContent, query, limit);
-        console.log('Search results:', results.length, 'items found for query:', query);
-        return { results };
+      },
+    });
+
+    // Define getPage tool - fetches full markdown from /llms.mdx/docs/...
+    const getPageTool = tool({
+      description: 'Fetch the full markdown content of a specific documentation page. Provide the page slug (e.g., "docs/test" or "docs/getting-started").',
+      inputSchema: z.object({
+        slug: z.string().describe('Page slug (e.g., "docs/test", "docs/getting-started")'),
+      }),
+      execute: async ({ slug }) => {
+        console.log('getPage tool called with slug:', slug);
+        try {
+          const content = await fetchPageMarkdown(siteUrl, slug);
+          console.log('Fetched page content length:', content.length);
+          return { content };
+        } catch (error) {
+          console.error('Fetch page error:', error);
+          return { content: '', error: String(error) };
+        }
       },
     });
 
@@ -186,10 +174,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
 
     const systemPrompt = `You are an AI assistant for a documentation site. 
-You MUST use the search tool to retrieve relevant documentation context before answering any question.
-Do not answer from general knowledge - always search the documentation first.
-The search tool returns relevant documentation snippets with URLs. Use those results to ground your answer and cite sources as markdown links using the document URL field when available.
-If you cannot find the answer in search results, say you do not know and suggest a better search query.`;
+You MUST use the available tools to retrieve relevant documentation context before answering.
+Available tools:
+1. search - Search the documentation index for relevant pages. Returns title, URL, and content snippets.
+2. getPage - Fetch the full markdown content of a specific page. Provide the page slug (e.g., "docs/test").
+
+Always search first to find relevant pages, then use getPage to read full content if needed.
+Ground your answers in the documentation and cite sources with URLs.
+If you cannot find the answer, say you don't know and suggest a better search query.`;
 
     const result = streamText({
       model: createOpenAI({
@@ -201,6 +193,7 @@ If you cannot find the answer in search results, say you do not know and suggest
       temperature: 0.7,
       tools: {
         search: searchTool,
+        getPage: getPageTool,
       },
       toolChoice: 'auto',
       maxSteps: 5,
