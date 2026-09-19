@@ -39,9 +39,40 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json();
     const { messages } = body;
 
-    if (!messages || !Array.isArray(messages)) {
+    console.log('Received messages:', JSON.stringify(messages, null, 2));
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Invalid request: messages array required' }),
+        JSON.stringify({ error: 'Invalid request: messages array required and must not be empty' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Convert AI SDK message format to standard OpenAI format
+    // AI SDK messages have: { id, role, parts: [{ type: 'text', text: '...' }] }
+    // OpenAI expects: { role: 'user', content: '...' }
+    const formattedMessages = messages.map((msg: any) => {
+      if (msg.content) {
+        // Already in OpenAI format
+        return { role: msg.role, content: msg.content };
+      }
+      if (msg.parts && Array.isArray(msg.parts)) {
+        // AI SDK format - extract text from parts
+        const text = msg.parts
+          .filter((p: any) => p.type === 'text')
+          .map((p: any) => p.text)
+          .join('');
+        return { role: msg.role, content: text };
+      }
+      // Fallback
+      return { role: msg.role, content: '' };
+    }).filter((msg: any) => msg.content && msg.content.trim().length > 0);
+
+    console.log('Formatted messages:', JSON.stringify(formattedMessages, null, 2));
+
+    if (formattedMessages.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'No valid messages with content' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -54,7 +85,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       },
       body: JSON.stringify({
         model: env.CHAT_MODEL,
-        messages,
+        messages: formattedMessages,
         temperature: 0.7,
         max_tokens: 1000,
         stream: true,
