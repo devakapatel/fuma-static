@@ -51,8 +51,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
   } catch (error) {
     console.error('Chat error:', error);
+    const errorDetails = error instanceof Error 
+      ? { message: error.message, stack: error.stack, name: error.name }
+      : { error: String(error), type: typeof error };
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
+      JSON.stringify({ error: 'Internal server error', details: errorDetails }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
