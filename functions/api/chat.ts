@@ -20,17 +20,25 @@ async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
   }
   const data = await response.json();
   
+  // ZBSearch returns docs as an object with numeric keys, and the actual doc data is in data.docs
   const docsObj = data.docs?.docs || {};
   const docsArray = Object.values(docsObj);
   
   return docsArray
     .slice(0, limit)
-    .map((doc: any, idx: number) => ({
-      title: doc.title || 'Untitled',
-      url: doc.url || '',
-      content: doc.content || '',
-      score: doc._score || 0,
-    }))
+    .map((doc: any, idx: number) => {
+      // ZBSearch stores title in different possible fields
+      const title = doc.title || doc.name || doc.heading || doc.breadcrumbs?.[0] || 'Untitled';
+      const url = doc.url || doc.href || doc.link || '';
+      const content = doc.content || doc.text || doc.body || '';
+      
+      return {
+        title,
+        url,
+        content,
+        score: doc._score || doc.score || 0,
+      };
+    })
     .filter((r: any) => r.content && r.content.length > 0);
 }
 
