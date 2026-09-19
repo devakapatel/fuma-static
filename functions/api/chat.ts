@@ -21,10 +21,10 @@ async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
   const data = await response.json();
   
   // Extract results from ZBSearch response
-  const docs = data.docs?.docs || [];
-  const internalIdToId = data.internalDocumentIDStore?.internalIdToId || [];
+  const docsObj = data.docs?.docs || {};
+  const docsArray = Object.values(docsObj);
   
-  return docs
+  return docsArray
     .slice(0, limit)
     .map((doc: any, idx: number) => ({
       title: doc.title || 'Untitled',
