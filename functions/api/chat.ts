@@ -214,19 +214,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
 
     const systemPrompt = `You are an AI assistant for a documentation site. 
-You have access to the following tools:
+You MUST use the available tools to answer questions. Do not answer from general knowledge.
 
-1. **search** - Search the documentation for relevant pages. Returns matching pages with title, URL, and content snippets.
-   Use this first to find relevant pages.
+Available tools:
+1. **search** - Search the documentation for relevant pages. ALWAYS use this first to find relevant pages.
+2. **getPage** - Fetch the full markdown content of a specific page. Use after search to read full content.
+3. **webFetch** - Fetch external URLs.
 
-2. **getPage** - Fetch the full markdown content of a specific documentation page. Provide the page slug (e.g., "docs/test", "docs/getting-started").
-   Use this after search to read full page content.
-
-3. **webFetch** - Fetch content from any external URL. Use this for external resources.
-
-Always search first to find relevant pages, then use getPage to read full content if needed.
-Ground your answers in the documentation and cite sources with URLs.
-If you cannot find the answer, say you don't know and suggest a better search query.`;
+RULES:
+- ALWAYS use 'search' tool first for ANY question about the documentation
+- After search, use 'getPage' to read full page content if needed
+- NEVER answer from general knowledge - ONLY use documentation content
+- Cite sources with URLs
+- If search returns no results, say you don't know and suggest a better search query`;
 
     const result = streamText({
       model: createOpenAI({
