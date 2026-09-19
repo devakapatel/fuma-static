@@ -1,16 +1,74 @@
 import Link from 'next/link';
+import { ArrowRight, ArrowUpRight } from 'lucide-react';
+import { cn } from '@/lib/cn';
+
+const semesters = Array.from({ length: 7 }, (_, i) => i + 1);
+
+function TelegramIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M21.9 4.6 18.9 19c-.2 1-.8 1.3-1.7.8l-4.6-3.4-2.2 2.1c-.25.25-.45.45-.9.45l.32-4.6L18.2 6.6c.36-.32-.08-.5-.56-.18L7.3 13.1l-4.5-1.4c-.98-.3-1-.98.2-1.45L20.6 3.2c.8-.3 1.5.2 1.3 1.4Z" />
+    </svg>
+  );
+}
 
 export default function HomePage() {
   return (
-    <div className="flex flex-col justify-center text-center flex-1">
-      <h1 className="text-2xl font-bold mb-4">Hello World</h1>
-      <p>
-        You can open{' '}
-        <Link href="/docs" className="font-medium underline">
-          /docs
-        </Link>{' '}
-        and see the documentation.
-      </p>
-    </div>
+    <main className="flex flex-col items-center px-6">
+      {/* ---------- Hero ---------- */}
+      <section className="flex flex-col items-center text-center pt-28 pb-24 max-w-2xl">
+        <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-balance">
+          Welcome to T9
+        </h1>
+        <p className="mt-5 text-lg leading-relaxed text-fd-muted-foreground text-balance">
+          Question Banks, Assignments, Practicals and more — now with an AI
+          assistant that reads the content and answers with sources.
+        </p>
+
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-2">
+          {semesters.map((sem) => (
+            <Link
+              key={sem}
+              href={`/sem-${sem}`}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors',
+                'bg-fd-primary text-fd-primary-foreground hover:bg-fd-primary/80',
+              )}
+            >
+              Sem {sem}
+              <ArrowRight className="size-3.5 opacity-60" />
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <hr className="w-full max-w-3xl border-fd-border" />
+
+      {/* ---------- Community ---------- */}
+      <section className="pt-14 pb-4 flex flex-col items-center text-center">
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <a
+            href="https://t.me/+yeaJ8DtX2uA0YjA9"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-full bg-[#229ED9] px-6 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+          >
+            <TelegramIcon className="size-4" />
+            Join the Telegram Group
+            <ArrowUpRight className="size-3.5 opacity-80" />
+          </a>
+          <Link
+            href="/about"
+            className={cn(
+              'inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition-colors',
+              'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground',
+            )}
+          >
+            About
+            <ArrowRight className="size-3.5 opacity-60" />
+          </Link>
+        </div>
+      </section>
+    </main>
   );
 }
