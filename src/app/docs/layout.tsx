@@ -8,23 +8,24 @@ import { buttonVariants } from '@/components/ui/button';
 
 export default function Layout({ children }: LayoutProps<'/docs'>) {
   return (
-    <AISearch>
-      <AISearchPanel />
-      <AISearchTrigger
-        position="float"
-        className={cn(
-          buttonVariants({
-            variant: 'secondary',
-            className: 'text-fd-muted-foreground rounded-2xl',
-          }),
-        )}
-      >
-        <MessageCircleIcon className="size-4.5" />
-        Ask AI
-      </AISearchTrigger>
-      <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
-        {children}
-      </DocsLayout>
-    </AISearch>
+    <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
+      {children}
+
+      <AISearch>
+        <AISearchPanel />
+        <AISearchTrigger
+          position="float"
+          className={cn(
+            buttonVariants({
+              variant: 'secondary',
+              className: 'text-fd-muted-foreground rounded-2xl',
+            }),
+          )}
+        >
+          <MessageCircleIcon className="size-4.5" />
+          Ask AI
+        </AISearchTrigger>
+      </AISearch>
+    </DocsLayout>
   );
 }
