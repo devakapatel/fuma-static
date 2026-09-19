@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, tool } from 'ai';
+import { streamText } from 'ai';
 import { z } from 'zod';
 
 interface Env {
@@ -52,33 +52,10 @@ async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string>
   return await response.text();
 }
 
-// Fetch external URL
-async function webFetch(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; Fumadocs AI Assistant)',
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Fetch failed: ${response.status}`);
-  }
-  return await response.text();
-}
-
 const systemPrompt = `You are an AI assistant for a documentation site. 
-You have access to the following tools:
-
-1. **search** - Search the documentation index for relevant pages. Returns matching pages with title, URL, and content snippets.
-   Use this first to find relevant pages.
-
-2. **getPage** - Fetch the full markdown content of a specific documentation page. Provide the page slug (e.g., "docs/test", "docs/getting-started").
-   Use this after search to read full page content.
-
-3. **webFetch** - Fetch content from any external URL. Use this for external resources.
-
-Always search first to find relevant pages, then use getPage to read full content if needed.
+You have access to the documentation content through search results provided in the context.
 Ground your answers in the documentation and cite sources with URLs.
-If you cannot find the answer, say you don't know and suggest a better search query.`;
+If you cannot find the answer in the provided context, say you don't know and suggest a better search query.`;
 
 interface Env {
   CHAT_ENDPOINT: string;
@@ -114,9 +91,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const siteUrl = env.SITE_URL || 'https://fuma-static.pages.dev';
 
     const body = await request.json();
-    const { messages } = body;
+    const { messages, currentPage } = body;
 
     console.log('Received messages:', JSON.stringify(messages, null, 2));
+    console.log('Current page:', currentPage);
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(
@@ -149,84 +127,44 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
-    // Tool: Search the documentation
-    const searchTool = tool({
-      description: 'Search the documentation for relevant pages. Returns matching pages with title, URL, and content snippets.',
-      inputSchema: z.object({
-        query: z.string().describe('Search query'),
-        limit: z.number().int().min(1).max(10).default(5).describe('Maximum number of results'),
-      }),
-      execute: async ({ query, limit = 5 }) => {
-        console.log('Search tool called with query:', query);
-        try {
-          const results = await searchDocs(siteUrl, query, limit);
-          console.log('Search results:', results.length, 'items found');
-          return { results };
-        } catch (error) {
-          console.error('Search error:', error);
-          return { results: [], error: String(error) };
-        }
-      },
-    });
+    // Get the user's last message for search
+    const lastUserMessage = formattedMessages
+      .filter(m => m.role === 'user')
+      .pop();
 
-    // Tool: Get full page markdown
-    const getPageTool = tool({
-      description: 'Fetch the full markdown content of a specific documentation page. Provide the page slug (e.g., "docs/test", "docs/getting-started").',
-      inputSchema: z.object({
-        slug: z.string().describe('Page slug (e.g., "docs/test", "docs/getting-started")'),
-      }),
-      execute: async ({ slug }) => {
-        console.log('getPage tool called with slug:', slug);
-        try {
-          const content = await fetchPageMarkdown(siteUrl, slug);
-          console.log('Fetched page content length:', content.length);
-          return { content };
-        } catch (error) {
-          console.error('Fetch page error:', error);
-          return { content: '', error: String(error) };
+    // Do search upfront based on the user's question
+    let searchContext = '';
+    if (lastUserMessage) {
+      try {
+        const searchResults = await searchDocs(siteUrl, lastUserMessage.content, 5);
+        if (searchResults.length > 0) {
+          searchContext = '\n\n--- Documentation Search Results ---\n';
+          searchResults.forEach((result, idx) => {
+            searchContext += `\n[${idx + 1}] ${result.title} (${result.url})\n${result.content}\n`;
+          });
         }
-      },
-    });
+      } catch (error) {
+        console.error('Search error:', error);
+      }
+    }
 
-    // Tool: Web fetch
-    const webFetchTool = tool({
-      description: 'Fetch content from any external URL. Provide the full URL.',
-      inputSchema: z.object({
-        url: z.string().url().describe('Full URL to fetch'),
-      }),
-      execute: async ({ url }) => {
-        console.log('webFetch tool called with url:', url);
-        try {
-          const content = await webFetch(url);
-          console.log('Fetched external content length:', content.length);
-          return { content: content.slice(0, 10000) }; // Limit to 10k chars
-        } catch (error) {
-          console.error('Web fetch error:', error);
-          return { content: '', error: String(error) };
-        }
-      },
-    });
-
-    // Use AI SDK's streamText with OpenAI provider
-    const openai = createOpenAI({
-      baseURL: env.CHAT_ENDPOINT,
-      apiKey: 'not-needed',
-    });
+    // Fetch current page content if provided
+    let currentPageContext = '';
+    if (currentPage) {
+      try {
+        const pageContent = await fetchPageMarkdown(siteUrl, currentPage);
+        currentPageContext = `\n\n--- Current Page Content (${currentPage}) ---\n${pageContent}`;
+      } catch (error) {
+        console.error('Current page fetch error:', error);
+      }
+    }
 
     const systemPrompt = `You are an AI assistant for a documentation site. 
-You MUST use the available tools to answer questions. Do not answer from general knowledge.
-
-Available tools:
-1. **search** - Search the documentation for relevant pages. ALWAYS use this first to find relevant pages.
-2. **getPage** - Fetch the full markdown content of a specific page. Use after search to read full content.
-3. **webFetch** - Fetch external URLs.
-
-RULES:
-- ALWAYS use 'search' tool first for ANY question about the documentation
-- After search, use 'getPage' to read full page content if needed
-- NEVER answer from general knowledge - ONLY use documentation content
-- Cite sources with URLs
-- If search returns no results, say you don't know and suggest a better search query`;
+You have access to the documentation content through search results provided in the context.
+Ground your answers in the documentation and cite sources with URLs.
+If you cannot find the answer in the provided context, say you don't know and suggest a better search query.
+${searchContext}
+${currentPageContext}`;
 
     const result = streamText({
       model: createOpenAI({
@@ -236,12 +174,6 @@ RULES:
       system: systemPrompt,
       messages: formattedMessages,
       temperature: 0.7,
-      tools: {
-        search: searchTool,
-        getPage: getPageTool,
-        webFetch: webFetchTool,
-      },
-      toolChoice: 'required',
     });
 
     return result.toUIMessageStreamResponse({
@@ -312,18 +244,6 @@ async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string>
   return await response.text();
 }
 
-async function webFetch(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; Fumadocs AI Assistant)',
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Fetch failed: ${response.status}`);
-  }
-  return await response.text();
-}
-
 export const onRequestOptions: PagesFunction = async () => {
   return new Response(null, {
     headers: {
@@ -332,4 +252,4 @@ export const onRequestOptions: PagesFunction = async () => {
       'Access-Control-Allow-Headers': 'Content-Type',
     },
   });
-};
+}
