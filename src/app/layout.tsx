@@ -1,5 +1,6 @@
 import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import type { Metadata } from 'next';
+import { Banner } from 'fumadocs-ui/components/banner';
 import { Provider } from '@/components/provider';
 import { appName, appEmoji } from '@/lib/shared';
 import 'katex/dist/katex.css';
@@ -46,6 +47,9 @@ export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" className={`${plexSans.variable} ${plexMono.variable} ${plexSans.className}`} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen font-sans">
+        <Banner variant="rainbow">
+          🌟 Advertisements go here 🌟
+        </Banner>
         <Provider>{children}</Provider>
       </body>
     </html>
