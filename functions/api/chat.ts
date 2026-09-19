@@ -184,8 +184,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
 
     const systemPrompt = `You are an AI assistant for a documentation site. 
-Use the search tool to retrieve relevant docs context before answering when needed.
-The search tool returns raw JSON results from documentation. Use those results to ground your answer and cite sources as markdown links using the document url field when available.
+You MUST use the search tool to retrieve relevant documentation context before answering any question.
+Do not answer from general knowledge - always search the documentation first.
+The search tool returns relevant documentation snippets with URLs. Use those results to ground your answer and cite sources as markdown links using the document URL field when available.
 If you cannot find the answer in search results, say you do not know and suggest a better search query.`;
 
     const result = streamText({
