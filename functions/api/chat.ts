@@ -196,6 +196,7 @@ If you cannot find the answer, say you don't know and suggest a better search qu
         getPage: getPageTool,
       },
       toolChoice: 'auto',
+      maxSteps: 10,
     });
 
     return result.toUIMessageStreamResponse({
