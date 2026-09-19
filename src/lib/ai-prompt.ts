@@ -7,7 +7,7 @@
  * each backend.
  */
 
-export const siteName = 'My App';
+export const siteName = 'T9 🏁';
 
 /** Default sampling temperature for grounded docs answers. */
 export const chatTemperature = 0.3;

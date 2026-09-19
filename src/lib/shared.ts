@@ -1,6 +1,8 @@
 import { createGetUrl } from 'fumadocs-core/source';
 
-export const appName = 'My App';
+export const appName = 'T9';
+export const appEmoji = '🏁';
+export const appTitle = `${appEmoji} ${appName}`;
 export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 export const docsContentRoute = '/llms.mdx/docs';
