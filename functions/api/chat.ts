@@ -5,6 +5,7 @@ import { z } from 'zod';
 interface Env {
   CHAT_ENDPOINT: string;
   CHAT_MODEL: string;
+  SITE_URL?: string;
 }
 
 interface PagesFunction<Env = unknown> {
