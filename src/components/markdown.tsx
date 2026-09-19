@@ -96,8 +96,47 @@ function Pre(props: ComponentProps<'pre'>) {
 
 const processor = createProcessor();
 
-export function Markdown({ text }: { text: string }) {
-  const deferredText = useDeferredValue(text);
+/**
+ * Make in-progress (streaming) markdown render cleanly:
+ * - hides reasoning blocks like <think>...</think>
+ * - closes unclosed code fences so partial code doesn't leak raw backticks
+ * - balances unclosed inline marks (bold, strikethrough, inline code)
+ *
+ * Heuristic and only affects *incomplete* input; once the stream ends with
+ * well-formed markdown, the output is unchanged (idempotent on closed input).
+ */
+export function normalizeStreamMarkdown(text: string): string {
+  let out = text
+    // complete reasoning blocks, and drop an unclosed one while still streaming
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<think>[\s\S]*$/g, '');
+
+  const lines = out.split('\n');
+  const fenceCount = lines.filter((line) => /^[ \t]*```/.test(line)).length;
+  const inUnclosedFence = fenceCount % 2 === 1;
+
+  // close an unclosed fenced code block
+  if (inUnclosedFence) out += '\n```';
+
+  // balance inline marks, ignoring lines inside code fences
+  if (!inUnclosedFence) {
+    const withoutFences = lines
+      .filter((line) => !/^[ \t]*```/.test(line))
+      .join('\n');
+
+    const count = (marker: string) => withoutFences.split(marker).length - 1;
+
+    if (count('**') % 2 === 1) out += '**';
+    if (count('~~') % 2 === 1) out += '~~';
+    if (count('`') % 2 === 1) out += '`';
+  }
+
+  return out;
+}
+
+export function Markdown({ text, stream = false }: { text: string; stream?: boolean }) {
+  const normalized = stream ? normalizeStreamMarkdown(text) : text;
+  const deferredText = useDeferredValue(normalized);
 
   return (
     <Suspense fallback={<p className="invisible">{text}</p>}>

@@ -19,6 +19,20 @@ import { useChat, type UseChatHelpers } from '@ai-sdk/react';
 import { DefaultChatTransport, type Tool, type UIMessage, type UIToolInvocation } from 'ai';
 import { Markdown } from '../markdown';
 
+/**
+ * Concatenate the assistant's text parts for rendering.
+ * Text parts are separated by tool calls / reasoning parts — join them with
+ * a paragraph break so two separate parts don't get glued together into
+ * broken markdown (e.g. `...sentence**Heading`).
+ */
+function getMarkdownText(message: ChatUIMessage): string {
+  const texts: string[] = [];
+  for (const part of message.parts ?? []) {
+    if (part.type === 'text' && part.text.length > 0) texts.push(part.text);
+  }
+  return texts.join('\n\n');
+}
+
 export type ChatUIMessage = UIMessage<
   never,
   {
@@ -262,20 +276,16 @@ function Input(props: ComponentProps<'textarea'>) {
 }
 
 const roleName: Record<string, string> = {
-  user: 'you',
-  assistant: 'fumadocs',
+  user: 'You',
+  assistant: 'T9 AI',
 };
 
 function Message({ message, ...props }: { message: ChatUIMessage } & ComponentProps<'div'>) {
-  let markdown = '';
+  const isStreaming = message.role === 'assistant' && !isMessageDone(message);
+  const markdown = getMarkdownText(message);
   const searchCalls: UIToolInvocation<SearchTool>[] = [];
 
   for (const part of message.parts ?? []) {
-    if (part.type === 'text') {
-      markdown += part.text;
-      continue;
-    }
-
     if (part.type.startsWith('tool-')) {
       const toolName = part.type.slice('tool-'.length);
       const p = part as UIToolInvocation<Tool>;
@@ -296,7 +306,7 @@ function Message({ message, ...props }: { message: ChatUIMessage } & ComponentPr
         {roleName[message.role] ?? 'unknown'}
       </p>
       <div className="prose text-sm">
-        <Markdown text={markdown} />
+        <Markdown text={markdown} stream={isStreaming} />
       </div>
 
       {searchCalls.map((call) => {
@@ -492,4 +502,21 @@ export function useAISearchContext() {
 
 function useChatContext() {
   return use(Context)!.chat;
+}
+
+/**
+ * A message is "done" when every non-reasoning part is in a terminal state.
+ * While parts are still streaming in, markdown needs stream normalization.
+ */
+function isMessageDone(message: ChatUIMessage): boolean {
+  const parts = message.parts ?? [];
+  if (parts.length === 0) return true;
+  return parts.every(
+    (part) =>
+      part.type === 'text' ||
+      (part.type.startsWith('tool-') &&
+        ['output-available', 'output-error', 'output-denied'].includes(
+          (part as UIToolInvocation<Tool>).state,
+        )),
+  );
 }
