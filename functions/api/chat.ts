@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText } from 'ai';
+import { streamText, tool } from 'ai';
 import { z } from 'zod';
 
 interface Env {
@@ -20,15 +20,13 @@ async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
   }
   const data = await response.json();
   
-  // ZBSearch returns docs as an object with numeric keys, and the actual doc data is in data.docs
   const docsObj = data.docs?.docs || {};
   const docsArray = Object.values(docsObj);
   
   return docsArray
     .slice(0, limit)
     .map((doc: any, idx: number) => {
-      // ZBSearch stores title in different possible fields
-      const title = doc.title || doc.name || doc.heading || doc.breadcrumbs?.[0] || 'Untitled';
+      const title = doc.title || doc.name || doc.heading || doc.breadcrumbs?.[0] || doc.content?.split('\n')[0] || 'Untitled';
       const url = doc.url || doc.href || doc.link || '';
       const content = doc.content || doc.text || doc.body || '';
       
@@ -42,7 +40,7 @@ async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
     .filter((r: any) => r.content && r.content.length > 0);
 }
 
-// Fetch page markdown content
+// Fetch page markdown content from llms.mdx
 async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string> {
   const cleanSlug = slug.startsWith('/') ? slug.slice(1) : slug;
   const url = `${siteUrl}/llms.mdx/docs/${cleanSlug}/content.md`;
@@ -54,10 +52,33 @@ async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string>
   return await response.text();
 }
 
+// Fetch external URL
+async function webFetch(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; Fumadocs AI Assistant)',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Fetch failed: ${response.status}`);
+  }
+  return await response.text();
+}
+
 const systemPrompt = `You are an AI assistant for a documentation site. 
-You have access to the documentation content through search results provided in the context.
+You have access to the following tools:
+
+1. **search** - Search the documentation index for relevant pages. Returns matching pages with title, URL, and content snippets.
+   Use this first to find relevant pages.
+
+2. **getPage** - Fetch the full markdown content of a specific documentation page. Provide the page slug (e.g., "docs/test", "docs/getting-started").
+   Use this after search to read full page content.
+
+3. **webFetch** - Fetch content from any external URL. Use this for external resources.
+
+Always search first to find relevant pages, then use getPage to read full content if needed.
 Ground your answers in the documentation and cite sources with URLs.
-If you cannot find the answer in the provided context, say you don't know and suggest a better search query.`;
+If you cannot find the answer, say you don't know and suggest a better search query.`;
 
 interface Env {
   CHAT_ENDPOINT: string;
@@ -128,37 +149,84 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
-    // Get the user's last message for search
-    const lastUserMessage = formattedMessages
-      .filter(m => m.role === 'user')
-      .pop();
-
-    // Do search upfront based on the user's question
-    let searchContext = '';
-    if (lastUserMessage) {
-      try {
-        const searchResults = await searchDocs(siteUrl, lastUserMessage.content, 5);
-        if (searchResults.length > 0) {
-          searchContext = '\n\n--- Documentation Search Results ---\n';
-          searchResults.forEach((result, idx) => {
-            searchContext += `\n[${idx + 1}] ${result.title} (${result.url})\n${result.content}\n`;
-          });
+    // Tool: Search the documentation
+    const searchTool = tool({
+      description: 'Search the documentation for relevant pages. Returns matching pages with title, URL, and content snippets.',
+      inputSchema: z.object({
+        query: z.string().describe('Search query'),
+        limit: z.number().int().min(1).max(10).default(5).describe('Maximum number of results'),
+      }),
+      execute: async ({ query, limit = 5 }) => {
+        console.log('Search tool called with query:', query);
+        try {
+          const results = await searchDocs(siteUrl, query, limit);
+          console.log('Search results:', results.length, 'items found');
+          return { results };
+        } catch (error) {
+          console.error('Search error:', error);
+          return { results: [], error: String(error) };
         }
-      } catch (error) {
-        console.error('Search error:', error);
-      }
-    }
+      },
+    });
 
-    const systemPrompt = `You are an AI assistant for a documentation site. 
-You have access to the documentation content through search results provided in the context.
-Ground your answers in the documentation and cite sources with URLs.
-If you cannot find the answer in the provided context, say you don't know and suggest a better search query.
-${searchContext}`;
+    // Tool: Get full page markdown
+    const getPageTool = tool({
+      description: 'Fetch the full markdown content of a specific documentation page. Provide the page slug (e.g., "docs/test", "docs/getting-started").',
+      inputSchema: z.object({
+        slug: z.string().describe('Page slug (e.g., "docs/test", "docs/getting-started")'),
+      }),
+      execute: async ({ slug }) => {
+        console.log('getPage tool called with slug:', slug);
+        try {
+          const content = await fetchPageMarkdown(siteUrl, slug);
+          console.log('Fetched page content length:', content.length);
+          return { content };
+        } catch (error) {
+          console.error('Fetch page error:', error);
+          return { content: '', error: String(error) };
+        }
+      },
+    });
 
+    // Tool: Web fetch
+    const webFetchTool = tool({
+      description: 'Fetch content from any external URL. Provide the full URL.',
+      inputSchema: z.object({
+        url: z.string().url().describe('Full URL to fetch'),
+      }),
+      execute: async ({ url }) => {
+        console.log('webFetch tool called with url:', url);
+        try {
+          const content = await webFetch(url);
+          console.log('Fetched external content length:', content.length);
+          return { content: content.slice(0, 10000) }; // Limit to 10k chars
+        } catch (error) {
+          console.error('Web fetch error:', error);
+          return { content: '', error: String(error) };
+        }
+      },
+    });
+
+    // Use AI SDK's streamText with OpenAI provider
     const openai = createOpenAI({
       baseURL: env.CHAT_ENDPOINT,
       apiKey: 'not-needed',
     });
+
+    const systemPrompt = `You are an AI assistant for a documentation site. 
+You have access to the following tools:
+
+1. **search** - Search the documentation for relevant pages. Returns matching pages with title, URL, and content snippets.
+   Use this first to find relevant pages.
+
+2. **getPage** - Fetch the full markdown content of a specific documentation page. Provide the page slug (e.g., "docs/test", "docs/getting-started").
+   Use this after search to read full page content.
+
+3. **webFetch** - Fetch content from any external URL. Use this for external resources.
+
+Always search first to find relevant pages, then use getPage to read full content if needed.
+Ground your answers in the documentation and cite sources with URLs.
+If you cannot find the answer, say you don't know and suggest a better search query.`;
 
     const result = streamText({
       model: createOpenAI({
@@ -168,6 +236,12 @@ ${searchContext}`;
       system: systemPrompt,
       messages: formattedMessages,
       temperature: 0.7,
+      tools: {
+        search: searchTool,
+        getPage: getPageTool,
+        webFetch: webFetchTool,
+      },
+      toolChoice: 'auto',
     });
 
     return result.toUIMessageStreamResponse({
@@ -188,6 +262,67 @@ ${searchContext}`;
     );
   }
 };
+
+export const onRequestOptions: PagesFunction = async () => {
+  return new Response(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
+};
+
+// Helper functions
+async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
+  const response = await fetch(`${siteUrl}/api/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+  if (!response.ok) {
+    throw new Error(`Search failed: ${response.status}`);
+  }
+  const data = await response.json();
+  
+  const docsObj = data.docs?.docs || {};
+  const docsArray = Object.values(docsObj);
+  
+  return docsArray
+    .slice(0, limit)
+    .map((doc: any, idx: number) => {
+      const title = doc.title || doc.name || doc.heading || doc.breadcrumbs?.[0] || doc.content?.split('\n')[0] || 'Untitled';
+      const url = doc.url || doc.href || doc.link || '';
+      const content = doc.content || doc.text || doc.body || '';
+      
+      return {
+        title,
+        url,
+        content,
+        score: doc._score || doc.score || 0,
+      };
+    })
+    .filter((r: any) => r.content && r.content.length > 0);
+}
+
+async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string> {
+  const cleanSlug = slug.startsWith('/') ? slug.slice(1) : slug;
+  const url = `${siteUrl}/llms.mdx/docs/${cleanSlug}/content.md`;
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch page: ${response.status}`);
+  }
+  return await response.text();
+}
+
+async function webFetch(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; Fumadocs AI Assistant)',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Fetch failed: ${response.status}`);
+  }
+  return await response.text();
+}
 
 export const onRequestOptions: PagesFunction = async () => {
   return new Response(null, {
