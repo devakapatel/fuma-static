@@ -33,9 +33,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
-    console.log('CHAT_ENDPOINT:', env.CHAT_ENDPOINT);
-    console.log('CHAT_MODEL:', env.CHAT_MODEL);
-
     const body = await request.json();
     const { messages } = body;
 
@@ -77,39 +74,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
-    // Call the upstream API directly to see the actual error
-    const upstreamResponse = await fetch(env.CHAT_ENDPOINT + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: env.CHAT_MODEL,
-        messages: formattedMessages,
-        temperature: 0.7,
-        max_tokens: 1000,
-        stream: true,
-      }),
+    // Use AI SDK's streamText with OpenAI provider - this handles the UI message stream format automatically
+    const openai = createOpenAI({
+      baseURL: env.CHAT_ENDPOINT,
+      apiKey: 'not-needed',
     });
 
-    console.log('Upstream response status:', upstreamResponse.status);
-    console.log('Upstream response headers:', Object.fromEntries(upstreamResponse.headers.entries()));
+    const result = streamText({
+      model: openai(env.CHAT_MODEL),
+      messages: formattedMessages,
+      temperature: 0.7,
+      maxTokens: 1000,
+    });
 
-    if (!upstreamResponse.ok) {
-      const errorText = await upstreamResponse.text();
-      console.error('Upstream error:', errorText);
-      return new Response(
-        JSON.stringify({ error: 'Upstream API error', status: upstreamResponse.status, details: errorText }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Stream the response back
-    return new Response(upstreamResponse.body, {
+    // Return UI message stream response - this produces the format the AI SDK client expects
+    return result.toUIMessageStreamResponse({
       headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
