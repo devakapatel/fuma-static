@@ -203,6 +203,7 @@ If you cannot find the answer in search results, say you do not know and suggest
         search: searchTool,
       },
       toolChoice: 'auto',
+      maxSteps: 5,
     });
 
     return result.toUIMessageStreamResponse({
