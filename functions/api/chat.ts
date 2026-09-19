@@ -241,7 +241,7 @@ RULES:
         getPage: getPageTool,
         webFetch: webFetchTool,
       },
-      toolChoice: 'auto',
+      toolChoice: 'required',
     });
 
     return result.toUIMessageStreamResponse({
