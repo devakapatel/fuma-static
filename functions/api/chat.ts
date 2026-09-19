@@ -136,7 +136,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     let searchContext = '';
     if (lastUserMessage) {
       try {
-        const searchResults = await searchDocs(siteUrl, lastUserMessage.content, 5);
+        const searchResults = await searchDocs(siteUrl, lastUserMessage.content, 10);
         if (searchResults.length > 0) {
           searchContext = '\n\n--- Documentation Search Results ---\n';
           searchResults.forEach((result, idx) => {
