@@ -106,6 +106,7 @@ function shortModelName(model: ChatModel): string {
 function ModelPicker({ className }: { className?: string }) {
   const { models, error } = useChatModels();
   const [model, select] = useSelectedModel();
+  const [open, setOpen] = useState(false);
 
   const current = models.find((m) => m.id === model);
 
@@ -117,13 +118,18 @@ function ModelPicker({ className }: { className?: string }) {
   }, [models, model]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label="Choose a model"
         className={(s) =>
           cn(
-            buttonVariants({ variant: 'secondary', size: 'sm', className: 'gap-1.5 text-xs' }),
-            s.open && 'bg-fd-accent',
+            buttonVariants({
+              variant: 'outline',
+              size: 'sm',
+              className:
+                'gap-1.5 text-xs border-fd-primary/40 bg-fd-primary/10 text-fd-primary hover:bg-fd-primary/20 hover:text-fd-primary',
+            }),
+            s.open && 'bg-fd-primary/25 border-fd-primary/60',
             className,
           )
         }
@@ -148,7 +154,10 @@ function ModelPicker({ className }: { className?: string }) {
                 ? 'bg-fd-primary/10 text-fd-primary'
                 : 'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground',
             )}
-            onClick={() => select(item.id)}
+            onClick={() => {
+              select(item.id);
+              setOpen(false);
+            }}
           >
             <span className="flex-1 truncate">{shortModelName(item)}</span>
             {item.id === model && <Check className="size-3.5 shrink-0" />}
