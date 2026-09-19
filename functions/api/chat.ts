@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, tool } from 'ai';
+import { streamText } from 'ai';
 import { z } from 'zod';
 
 interface Env {
@@ -20,7 +20,6 @@ async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
   }
   const data = await response.json();
   
-  // Extract results from ZBSearch response
   const docsObj = data.docs?.docs || {};
   const docsArray = Object.values(docsObj);
   
@@ -37,8 +36,6 @@ async function searchDocs(siteUrl: string, query: string, limit: number = 5) {
 
 // Fetch page markdown content
 async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string> {
-  // Convert slug to the llms.mdx URL format
-  // e.g., "/docs/test" -> "/llms.mdx/docs/test/content.md"
   const cleanSlug = slug.startsWith('/') ? slug.slice(1) : slug;
   const url = `${siteUrl}/llms.mdx/docs/${cleanSlug}/content.md`;
   
@@ -50,14 +47,9 @@ async function fetchPageMarkdown(siteUrl: string, slug: string): Promise<string>
 }
 
 const systemPrompt = `You are an AI assistant for a documentation site. 
-You MUST use the available tools to retrieve relevant documentation context before answering.
-Available tools:
-1. search - Search the documentation index for relevant pages
-2. getPage - Fetch the full markdown content of a specific page
-
-Always search first to find relevant pages, then use getPage to read full content if needed.
+You have access to the documentation content through search results provided in the context.
 Ground your answers in the documentation and cite sources with URLs.
-If you cannot find the answer, say you don't know.`;
+If you cannot find the answer in the provided context, say you don't know and suggest a better search query.`;
 
 interface Env {
   CHAT_ENDPOINT: string;
@@ -128,60 +120,37 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
-    // Define search tool - uses existing /api/search endpoint
-    const searchTool = tool({
-      description: 'Search the documentation for relevant pages. Returns matching pages with title, URL, and content snippets.',
-      inputSchema: z.object({
-        query: z.string().describe('Search query'),
-        limit: z.number().int().min(1).max(10).default(5).describe('Maximum number of results'),
-      }),
-      execute: async ({ query, limit = 5 }) => {
-        console.log('Search tool called with query:', query);
-        try {
-          const results = await searchDocs(siteUrl, query, limit);
-          console.log('Search results:', results.length, 'items found');
-          return { results };
-        } catch (error) {
-          console.error('Search error:', error);
-          return { results: [], error: String(error) };
-        }
-      },
-    });
+    // Get the user's last message for search
+    const lastUserMessage = formattedMessages
+      .filter(m => m.role === 'user')
+      .pop();
 
-    // Define getPage tool - fetches full markdown from /llms.mdx/docs/...
-    const getPageTool = tool({
-      description: 'Fetch the full markdown content of a specific documentation page. Provide the page slug (e.g., "docs/test" or "docs/getting-started").',
-      inputSchema: z.object({
-        slug: z.string().describe('Page slug (e.g., "docs/test", "docs/getting-started")'),
-      }),
-      execute: async ({ slug }) => {
-        console.log('getPage tool called with slug:', slug);
-        try {
-          const content = await fetchPageMarkdown(siteUrl, slug);
-          console.log('Fetched page content length:', content.length);
-          return { content };
-        } catch (error) {
-          console.error('Fetch page error:', error);
-          return { content: '', error: String(error) };
+    // Do search upfront based on the user's question
+    let searchContext = '';
+    if (lastUserMessage) {
+      try {
+        const searchResults = await searchDocs(siteUrl, lastUserMessage.content, 5);
+        if (searchResults.length > 0) {
+          searchContext = '\n\n--- Documentation Search Results ---\n';
+          searchResults.forEach((result, idx) => {
+            searchContext += `\n[${idx + 1}] ${result.title} (${result.url})\n${result.content}\n`;
+          });
         }
-      },
-    });
+      } catch (error) {
+        console.error('Search error:', error);
+      }
+    }
 
-    // Use AI SDK's streamText with OpenAI provider
+    const systemPrompt = `You are an AI assistant for a documentation site. 
+You have access to the documentation content through search results provided in the context.
+Ground your answers in the documentation and cite sources with URLs.
+If you cannot find the answer in the provided context, say you don't know and suggest a better search query.
+${searchContext}`;
+
     const openai = createOpenAI({
       baseURL: env.CHAT_ENDPOINT,
       apiKey: 'not-needed',
     });
-
-    const systemPrompt = `You are an AI assistant for a documentation site. 
-You MUST use the available tools to retrieve relevant documentation context before answering.
-Available tools:
-1. search - Search the documentation index for relevant pages. Returns title, URL, and content snippets.
-2. getPage - Fetch the full markdown content of a specific page. Provide the page slug (e.g., "docs/test").
-
-Always search first to find relevant pages, then use getPage to read full content if needed.
-Ground your answers in the documentation and cite sources with URLs.
-If you cannot find the answer, say you don't know and suggest a better search query.`;
 
     const result = streamText({
       model: createOpenAI({
@@ -191,11 +160,6 @@ If you cannot find the answer, say you don't know and suggest a better search qu
       system: systemPrompt,
       messages: formattedMessages,
       temperature: 0.7,
-      tools: {
-        search: searchTool,
-        getPage: getPageTool,
-      },
-      toolChoice: 'auto',
     });
 
     return result.toUIMessageStreamResponse({
