@@ -1,4 +1,4 @@
-import { IBM_Plex_Sans, JetBrains_Mono } from 'next/font/google';
+import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import { Provider } from '@/components/provider';
 import './global.css';
 
@@ -9,15 +9,16 @@ const plexSans = IBM_Plex_Sans({
   display: 'swap',
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const plexMono = IBM_Plex_Mono({
   subsets: ['latin'],
+  weight: ['400', '500', '600'],
   variable: '--font-mono',
   display: 'swap',
 });
 
 export default function Layout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${jetbrainsMono.variable} ${plexSans.className}`} suppressHydrationWarning>
+    <html lang="en" className={`${plexSans.variable} ${plexMono.variable} ${plexSans.className}`} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen font-sans">
         <Provider>{children}</Provider>
       </body>
