@@ -193,7 +193,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const result = streamText({
       model: createOpenAI({
         baseURL: env.CHAT_ENDPOINT,
+        // The gateway is auth-less, but it strictly validates any bearer token
+        // it receives (401 INVALID_TOKEN). `apiKey` must stay a non-empty
+        // string (the SDK otherwise throws "API key is missing"), so we
+        // override Authorization with an empty string to send no credentials.
         apiKey: 'not-needed',
+        headers: { Authorization: '' },
       })(model),
       system: systemPrompt,
       messages: await convertToModelMessages(uiMessages, {
