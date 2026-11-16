@@ -42,7 +42,7 @@ export const AI_PLANS: AiPlan[] = [
 
 export const DONATION = {
   min: 1_000, // ₹10
-  presets: [1_000, 2_500, 5_000, 10_000],
+  presets: [5_000, 10_000, 25_000, 50_000],
 };
 
 /**
