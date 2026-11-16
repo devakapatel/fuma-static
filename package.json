@@ -37,7 +37,7 @@
     "zod": "^4.6.7"
   },
   "overrides": {
-    "mdast-util-to-markdown": "2.1.2"
+    "mdast-util-to-markdown": "2.2.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.5",
