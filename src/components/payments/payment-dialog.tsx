@@ -294,6 +294,10 @@ export function PaymentDialog({
       )
     : null;
   const donationPaise = Math.round(Number(donationRupees) * 100);
+  const donationTooSmall =
+    purpose === 'donation' &&
+    (!Number.isFinite(donationPaise) ||
+      donationPaise < (config?.donation.min ?? 0));
   const selectedAmount =
     purpose === 'ai' ? selectedAi?.amount : donationPaise;
 
@@ -435,7 +439,14 @@ export function PaymentDialog({
                       className={cn(fieldClass, 'pl-7')}
                     />
                   </span>
-                  <span className="text-xs text-fd-muted-foreground">
+                  <span
+                    className={cn(
+                      'text-xs',
+                      donationTooSmall
+                        ? 'text-fd-error'
+                        : 'text-fd-muted-foreground',
+                    )}
+                  >
                     Any amount from {formatMoney(config.donation.min)}. There is
                     no upper limit.
                   </span>
@@ -459,7 +470,7 @@ export function PaymentDialog({
             <button
               type="button"
               onClick={() => void startPayment()}
-              disabled={!config.configured}
+              disabled={!config.configured || donationTooSmall}
               className={cn(
                 buttonVariants({
                   variant: 'primary',

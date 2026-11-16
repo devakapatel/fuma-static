@@ -32,15 +32,17 @@ export const AI_PLANS: AiPlan[] = [
   {
     id: 'ai-1',
     label: '30 days',
-    amount: 4_900,
+    // TEMPORARY ₹5 test price. Restore to 4_900 (₹49) once the live flow is
+    // verified end to end.
+    amount: 500,
     days: 30,
     blurb: 'Use the assistant on one device at a time for 30 days.',
   },
 ];
 
 export const DONATION = {
-  min: 5_000, // ₹50
-  presets: [5_000, 10_000, 25_000, 50_000],
+  min: 1_000, // ₹10
+  presets: [1_000, 2_500, 5_000, 10_000],
 };
 
 /**
