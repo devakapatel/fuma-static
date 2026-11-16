@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Check,
   CheckCircle2,
   Clock3,
+  Copy,
+  ExternalLink,
+  Link2,
   Loader2,
-  QrCode,
   RefreshCw,
   X,
 } from 'lucide-react';
@@ -37,7 +40,7 @@ function errorMessage(code: string | undefined): string {
     case 'payments_not_configured':
       return 'Payments are not configured on this deployment yet.';
     case 'payment_provider_error':
-      return 'Razorpay could not create the QR. Please try again in a moment.';
+      return 'Razorpay could not create the payment link. Please try again in a moment.';
     case 'too_many_attempts':
       return 'Too many attempts. Wait a few minutes and try again.';
     case 'invalid_amount':
@@ -76,7 +79,7 @@ export function PaymentDialog({
   const [error, setError] = useState<string | null>(null);
   const [intent, setIntent] = useState<PaymentIntent | null>(null);
   const [now, setNow] = useState(0);
-  const [imageFailed, setImageFailed] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [aiPlanId, setAiPlanId] = useState('');
   const [donationRupees, setDonationRupees] = useState('');
@@ -98,7 +101,7 @@ export function PaymentDialog({
     setPhase('loading');
     setError(null);
     setIntent(null);
-    setImageFailed(false);
+    setCopied(false);
     setAdTitle('');
     setAdUrl('');
     setAdNote('');
@@ -146,10 +149,18 @@ export function PaymentDialog({
     if (!purpose || phase !== 'paying' || !intentId) return;
 
     let cancelled = false;
+    let ticks = 0;
     const check = async () => {
+      // Ask the server to reconcile with Razorpay every ~15 seconds, so the
+      // dialog still completes if the webhook is delayed.
+      const reconcile = ticks++ % 5 === 0;
       try {
         const response = await fetch(
-          apiUrl(`/api/payments/intent?id=${encodeURIComponent(intentId)}`),
+          apiUrl(
+            `/api/payments/intent?id=${encodeURIComponent(intentId)}${
+              reconcile ? '&reconcile=1' : ''
+            }`,
+          ),
           { credentials: 'include', cache: 'no-store' },
         );
         if (!response.ok) return;
@@ -245,7 +256,7 @@ export function PaymentDialog({
 
     setPhase('creating');
     setIntent(null);
-    setImageFailed(false);
+    setCopied(false);
 
     try {
       const response = await fetch(apiUrl('/api/payments/create'), {
@@ -283,6 +294,17 @@ export function PaymentDialog({
     adNote,
   ]);
 
+  const copyPaymentLink = useCallback(async () => {
+    if (!intent?.paymentUrl) return;
+    try {
+      await navigator.clipboard.writeText(intent.paymentUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be blocked; the link stays selectable.
+    }
+  }, [intent]);
+
   if (!purpose) return null;
 
   const title =
@@ -298,7 +320,7 @@ export function PaymentDialog({
     purpose === 'ai'
       ? aiActive
         ? 'Days add to the end of your current access.'
-        : 'Pay with UPI and access activates automatically.'
+        : 'Pay with UPI, cards, or netbanking and access activates automatically.'
       : purpose === 'donation'
         ? 'Support hosting, new notes, and the AI assistant.'
         : 'Pay now; your creative is reviewed before it goes live.';
@@ -316,7 +338,7 @@ export function PaymentDialog({
   const remainingMs = intent
     ? Math.max(0, Date.parse(intent.expiresAt) - now)
     : 0;
-  const qrExpired = phase === 'paying' && remainingMs <= 0;
+  const linkExpired = phase === 'paying' && remainingMs <= 0;
 
   return (
     <div
@@ -553,8 +575,8 @@ export function PaymentDialog({
 
             {config.testMode && (
               <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                Razorpay test mode: QR codes cannot be scanned with a real UPI
-                app. Use a signed test webhook to verify fulfilment.
+                Razorpay test mode: the payment page accepts Razorpay test cards
+                and UPI IDs. Use a signed test webhook to verify fulfilment.
               </p>
             )}
 
@@ -575,16 +597,16 @@ export function PaymentDialog({
                 }),
               )}
             >
-              <QrCode className="size-4" />
-              {purpose === 'ad' ? 'Pay & submit' : 'Generate UPI QR'}
+              <Link2 className="size-4" />
+              {purpose === 'ad' ? 'Create link & submit' : 'Create payment link'}
               {selectedAmount && Number.isFinite(selectedAmount) ? (
                 <span className="opacity-80">· {formatMoney(selectedAmount)}</span>
               ) : null}
             </button>
 
             <p className="text-center text-xs text-fd-muted-foreground">
-              You&apos;ll scan the QR with any UPI app. Card details are never
-              stored on this site.
+              You&apos;ll pay on Razorpay&apos;s secure page. Card details are
+              never stored on this site.
             </p>
           </div>
         )}
@@ -592,7 +614,7 @@ export function PaymentDialog({
         {phase === 'creating' && (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-fd-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
-            Creating your QR…
+            Creating your payment link…
           </div>
         )}
 
@@ -607,12 +629,14 @@ export function PaymentDialog({
               </p>
             </div>
 
-            {qrExpired ? (
+            {linkExpired ? (
               <div className="rounded-xl border border-dashed p-6 text-center">
                 <Clock3 className="mx-auto size-6 text-fd-muted-foreground" />
-                <p className="mt-2 text-sm font-medium">This QR expired</p>
+                <p className="mt-2 text-sm font-medium">
+                  This payment link expired
+                </p>
                 <p className="mt-1 text-sm text-fd-muted-foreground">
-                  Generate a fresh QR to try again.
+                  Create a fresh link to try again.
                 </p>
                 <button
                   type="button"
@@ -625,48 +649,56 @@ export function PaymentDialog({
                   )}
                 >
                   <RefreshCw className="size-4" />
-                  Generate a new QR
+                  Create a new link
                 </button>
               </div>
             ) : (
               <>
-                <div className="flex justify-center">
-                  <div className="rounded-2xl border bg-white p-2">
-                    {intent.qrImageUrl && !imageFailed ? (
-                      // Razorpay hosts the QR image at a short URL; load it as-is.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={intent.qrImageUrl}
-                        alt="UPI payment QR code"
-                        className="size-56 object-contain"
-                        onError={() => setImageFailed(true)}
-                      />
-                    ) : (
-                      <div className="flex size-56 flex-col items-center justify-center gap-2 p-4 text-center text-sm text-neutral-600">
-                        <QrCode className="size-8" />
-                        <span>QR image unavailable.</span>
-                        {intent.qrImageUrl && (
-                          <a
-                            href={intent.qrImageUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium text-fd-primary underline"
-                          >
-                            Open the QR image
-                          </a>
+                {intent.paymentUrl && (
+                  <div className="space-y-2">
+                    <a
+                      href={intent.paymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={cn(
+                        buttonVariants({
+                          variant: 'primary',
+                          className: 'w-full gap-2 rounded-full',
+                        }),
+                      )}
+                    >
+                      <ExternalLink className="size-4" />
+                      Open payment page
+                    </a>
+                    <div className="flex items-center gap-2 rounded-lg border bg-fd-secondary/40 px-3 py-2">
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs text-fd-muted-foreground">
+                        {intent.paymentUrl}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void copyPaymentLink()}
+                        aria-label="Copy payment link"
+                        className={cn(
+                          buttonVariants({
+                            variant: 'ghost',
+                            size: 'icon-sm',
+                            className: 'shrink-0 rounded-full',
+                          }),
                         )}
-                      </div>
-                    )}
+                      >
+                        {copied ? <Check /> : <Copy />}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="text-center">
                   <p className="text-sm font-medium">
-                    Scan with any UPI app
+                    Complete the payment on Razorpay
                   </p>
                   <p className="mt-1 text-xs text-fd-muted-foreground">
-                    GPay, PhonePe, Paytm, or your bank app. This page updates
-                    automatically after payment.
+                    Pay with UPI, cards, netbanking, or wallets. This page
+                    updates automatically once Razorpay confirms it.
                   </p>
                 </div>
 
@@ -683,9 +715,9 @@ export function PaymentDialog({
 
                 {config?.testMode && (
                   <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                    Test mode: this QR cannot be scanned. Send a signed{' '}
-                    <code className="font-mono">qr_code.credited</code> webhook
-                    to test the rest of the flow.
+                    Test mode: pay with a Razorpay test card or UPI ID, or send
+                    a signed <code className="font-mono">payment_link.paid</code>{' '}
+                    webhook to test the rest of the flow.
                   </p>
                 )}
               </>

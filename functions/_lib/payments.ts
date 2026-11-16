@@ -65,8 +65,12 @@ export const AD_PLANS: AdPlan[] = [
   },
 ];
 
-/** A UPI QR is valid for 15 minutes. Razorpay caps QR life at about 2 hours. */
-export const QR_TTL_SECONDS = 15 * 60;
+/**
+ * How long a payment link stays payable. Razorpay requires `expire_by` to be
+ * at least 15 minutes in the future; 30 minutes leaves room for slow payers
+ * without leaving stale links around.
+ */
+export const PAYMENT_TTL_SECONDS = 30 * 60;
 
 export interface Purchase {
   purpose: PaymentPurpose;
@@ -226,6 +230,8 @@ export interface PaymentIntentRow {
   duration_days: number | null;
   status: string;
   razorpay_qr_id: string | null;
+  razorpay_link_id: string | null;
+  short_url: string | null;
   razorpay_payment_id: string | null;
   qr_image_url: string | null;
   metadata: string | null;
@@ -244,7 +250,7 @@ export interface PublicPaymentIntent {
   amount: number;
   currency: string;
   status: PublicPaymentStatus;
-  qrImageUrl: string | null;
+  paymentUrl: string | null;
   expiresAt: string;
   paidAt: string | null;
   createdAt: string;
@@ -281,7 +287,7 @@ export function toPublicIntent(
     amount: row.amount,
     currency: row.currency,
     status,
-    qrImageUrl: row.qr_image_url,
+    paymentUrl: row.short_url,
     expiresAt: row.expires_at,
     paidAt: row.paid_at,
     createdAt: row.created_at,
@@ -327,18 +333,18 @@ export async function insertPaymentIntent(
     .run();
 }
 
-export async function markIntentQrCreated(
+export async function markIntentLinkCreated(
   db: D1Database,
   id: string,
-  qr: { id: string; imageUrl: string | null; expiresAt: string },
+  link: { id: string; shortUrl: string; expiresAt: string },
 ): Promise<void> {
   await db
     .prepare(
       `UPDATE payment_intents
-       SET razorpay_qr_id = ?, qr_image_url = ?, expires_at = ?, updated_at = ?
+       SET razorpay_link_id = ?, short_url = ?, expires_at = ?, updated_at = ?
        WHERE id = ?`,
     )
-    .bind(qr.id, qr.imageUrl, qr.expiresAt, new Date().toISOString(), id)
+    .bind(link.id, link.shortUrl, link.expiresAt, new Date().toISOString(), id)
     .run();
 }
 
@@ -354,6 +360,26 @@ export async function findIntentForUser(
   return db
     .prepare('SELECT * FROM payment_intents WHERE id = ? AND user_id = ?')
     .bind(id, userId)
+    .first<PaymentIntentRow>();
+}
+
+export async function findIntentById(
+  db: D1Database,
+  id: string,
+): Promise<PaymentIntentRow | null> {
+  return db
+    .prepare('SELECT * FROM payment_intents WHERE id = ?')
+    .bind(id)
+    .first<PaymentIntentRow>();
+}
+
+export async function findIntentByLinkId(
+  db: D1Database,
+  linkId: string,
+): Promise<PaymentIntentRow | null> {
+  return db
+    .prepare('SELECT * FROM payment_intents WHERE razorpay_link_id = ?')
+    .bind(linkId)
     .first<PaymentIntentRow>();
 }
 
@@ -443,13 +469,26 @@ export async function fulfilIntent(
         base + intent.duration_days * 24 * 60 * 60 * 1000,
       ).toISOString();
 
+      // The guard on `fulfilled_at` makes concurrent deliveries (webhook +
+      // status reconciliation) credit the account only once.
       await db.batch([
         db
-          .prepare('UPDATE users SET paid_until = ?, updated_at = ? WHERE id = ?')
-          .bind(paidUntil, nowIso, user.id),
-        db
-          .prepare('UPDATE payment_intents SET fulfilled_at = ?, updated_at = ? WHERE id = ?')
+          .prepare(
+            `UPDATE payment_intents
+             SET fulfilled_at = ?, updated_at = ?
+             WHERE id = ? AND fulfilled_at IS NULL`,
+          )
           .bind(nowIso, nowIso, intent.id),
+        db
+          .prepare(
+            `UPDATE users SET paid_until = ?, updated_at = ?
+             WHERE id = ?
+               AND EXISTS (
+                 SELECT 1 FROM payment_intents
+                 WHERE id = ? AND fulfilled_at = ?
+               )`,
+          )
+          .bind(paidUntil, nowIso, user.id, intent.id, nowIso),
         db
           .prepare(
             'INSERT OR IGNORE INTO webhook_events (id, type, received_at) VALUES (?, ?, ?)',
@@ -462,7 +501,11 @@ export async function fulfilIntent(
 
   await db.batch([
     db
-      .prepare('UPDATE payment_intents SET fulfilled_at = ?, updated_at = ? WHERE id = ?')
+      .prepare(
+        `UPDATE payment_intents
+         SET fulfilled_at = ?, updated_at = ?
+         WHERE id = ? AND fulfilled_at IS NULL`,
+      )
       .bind(nowIso, nowIso, intent.id),
     db
       .prepare('INSERT OR IGNORE INTO webhook_events (id, type, received_at) VALUES (?, ?, ?)')

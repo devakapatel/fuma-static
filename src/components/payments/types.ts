@@ -38,7 +38,7 @@ export interface PaymentIntent {
   amount: number;
   currency: string;
   status: PaymentStatus;
-  qrImageUrl: string | null;
+  paymentUrl: string | null;
   expiresAt: string;
   paidAt: string | null;
   createdAt: string;

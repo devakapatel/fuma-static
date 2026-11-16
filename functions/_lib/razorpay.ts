@@ -3,10 +3,16 @@ import type { Env } from './types';
 const RAZORPAY_API = 'https://api.razorpay.com/v1';
 const encoder = new TextEncoder();
 
-export interface RazorpayQr {
+export interface RazorpayPaymentLink {
   id: string;
-  image_url: string | null;
-  close_by: number | null;
+  short_url: string;
+  expire_by: number | null;
+  status: string;
+}
+
+export interface RazorpayPaymentLinkDetails extends RazorpayPaymentLink {
+  amount_paid: number | null;
+  payments: Array<{ payment_id: string; status: string; amount: number | null }> | null;
 }
 
 export function razorpayConfigured(env: Env): boolean {
@@ -65,46 +71,88 @@ async function razorpayRequest(
   return data;
 }
 
-export async function closeUpiQr(env: Env, qrId: string): Promise<void> {
-  await razorpayRequest(env, `/payments/qr_codes/${encodeURIComponent(qrId)}/close`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-}
-
-export async function createUpiQr(
+export async function createPaymentLink(
   env: Env,
   input: {
     amount: number;
-    name: string;
     description: string;
-    closeBy: number;
+    referenceId: string;
+    expireBy: number;
     notes: Record<string, string>;
+    callbackUrl?: string;
   },
-): Promise<RazorpayQr> {
-  const data = (await razorpayRequest(env, '/payments/qr_codes', {
+): Promise<RazorpayPaymentLink> {
+  const data = (await razorpayRequest(env, '/payment_links/', {
     method: 'POST',
     body: JSON.stringify({
-      type: 'upi_qr',
-      name: input.name.slice(0, 40),
-      usage: 'single_use',
-      fixed_amount: true,
-      payment_amount: input.amount,
-      description: input.description.slice(0, 255),
-      close_by: input.closeBy,
+      amount: input.amount,
+      currency: 'INR',
+      description: input.description.slice(0, 2048),
+      reference_id: input.referenceId.slice(0, 40),
+      expire_by: input.expireBy,
       notes: input.notes,
+      notify: { sms: false, email: false },
+      reminder_enable: false,
+      ...(input.callbackUrl
+        ? { callback_url: input.callbackUrl, callback_method: 'get' }
+        : {}),
     }),
-  })) as Partial<RazorpayQr> | null;
+  })) as Partial<RazorpayPaymentLink> | null;
 
-  if (!data || typeof data.id !== 'string') {
-    throw new Error('Razorpay returned an invalid QR response');
+  if (!data || typeof data.id !== 'string' || typeof data.short_url !== 'string') {
+    throw new Error('Razorpay returned an invalid Payment Link response');
   }
 
   return {
     id: data.id,
-    image_url: typeof data.image_url === 'string' ? data.image_url : null,
-    close_by: typeof data.close_by === 'number' ? data.close_by : null,
+    short_url: data.short_url,
+    expire_by: typeof data.expire_by === 'number' ? data.expire_by : null,
+    status: typeof data.status === 'string' ? data.status : 'created',
   };
+}
+
+export async function fetchPaymentLink(
+  env: Env,
+  linkId: string,
+): Promise<RazorpayPaymentLinkDetails> {
+  const data = (await razorpayRequest(
+    env,
+    `/payment_links/${encodeURIComponent(linkId)}`,
+    { method: 'GET' },
+  )) as Partial<RazorpayPaymentLinkDetails> | null;
+
+  if (!data || typeof data.id !== 'string') {
+    throw new Error('Razorpay returned an invalid Payment Link response');
+  }
+
+  return {
+    id: data.id,
+    short_url: typeof data.short_url === 'string' ? data.short_url : '',
+    expire_by: typeof data.expire_by === 'number' ? data.expire_by : null,
+    status: typeof data.status === 'string' ? data.status : 'created',
+    amount_paid: typeof data.amount_paid === 'number' ? data.amount_paid : null,
+    payments: Array.isArray(data.payments)
+      ? data.payments.flatMap((entry) => {
+          const candidate = entry as { payment_id?: unknown; status?: unknown; amount?: unknown };
+          if (!candidate || typeof candidate.payment_id !== 'string') return [];
+          return [
+            {
+              payment_id: candidate.payment_id,
+              status:
+                typeof candidate.status === 'string' ? candidate.status : 'captured',
+              amount: typeof candidate.amount === 'number' ? candidate.amount : null,
+            },
+          ];
+        })
+      : null,
+  };
+}
+
+export async function cancelPaymentLink(env: Env, linkId: string): Promise<void> {
+  await razorpayRequest(env, `/payment_links/${encodeURIComponent(linkId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

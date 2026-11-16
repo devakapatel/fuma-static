@@ -39,17 +39,24 @@ registered and then shows either the login or the create-account password
 fields. Enforcement lives in `functions/api/chat.ts` and
 `functions/api/search-query.ts`, not in the UI.
 
-### Payments (Razorpay UPI QR)
+### Payments (Razorpay Payment Links)
 
 Signed-in users can buy AI access, donate, or buy an ad slot from `/account`.
-Each option opens a dialog on the same page, creates a single-use Razorpay QR,
-and polls the intent until Razorpay's `qr_code.credited` webhook marks it paid.
+Each option opens a dialog on the same page, creates a single-use Razorpay
+Payment Link, and shows the link plus a "Open payment page" button. The dialog
+polls the intent until Razorpay's `payment_link.paid` webhook marks it paid.
 AI access extends `users.paid_until` from `max(now, current paid_until)`, so
 renewals stack.
 
 Pricing lives in `functions/_lib/payments.ts` (AI plans, donation bounds and
 presets, ad plans). Amounts are stored in paise. Ad payments are recorded but
 ads still require manual review before publishing.
+
+Links expire after 30 minutes (`PAYMENT_TTL_SECONDS`), which satisfies
+Razorpay's 15-minute `expire_by` minimum. The `callback_url` sends the payer
+back to `/account?paid=<intent>`, but fulfilment never relies on it: the webhook
+is authoritative, and `/api/payments/intent?reconcile=1` falls back to fetching
+the Payment Link from Razorpay if a delivery is delayed.
 
 Required Pages secrets (set in the Cloudflare dashboard):
 
@@ -61,26 +68,31 @@ Required Pages secrets (set in the Cloudflare dashboard):
 Webhook configuration in Razorpay Dashboard:
 
 - URL: `https://<your-site>/api/payments/webhook`
-- Event: `qr_code.credited`
+- Event: `payment_link.paid`
 - Secret: same value as `RAZORPAY_WEBHOOK_SECRET`
+
+The legacy `qr_code.credited` event is still handled for intents created before
+the switch to Payment Links.
 
 The D1 binding is declared in `wrangler.toml`. Deployments still run through the
 GitHub-connected Cloudflare Pages build.
 
-Razorpay test-mode QR codes can be created but cannot be scanned by a real UPI
-app. To test fulfilment, create a payment from `/account`, find its QR id, then
-send a signed `qr_code.credited` event:
+Test mode accepts Razorpay test cards and UPI IDs on the hosted payment page,
+and caps you at 30 Payment Links per business. To test fulfilment without
+paying, create a link from `/account`, find its link id, then send a signed
+`payment_link.paid` event:
 
 ```bash
 bunx wrangler d1 execute t9-auth --local \
-  --command "SELECT id, razorpay_qr_id, amount, status FROM payment_intents ORDER BY created_at DESC LIMIT 5"
+  --command "SELECT id, razorpay_link_id, amount, status FROM payment_intents ORDER BY created_at DESC LIMIT 5"
 
-bun scripts/simulate-qr-webhook.mjs --qr qr_xxxx --amount 9900
+bun scripts/simulate-payment-webhook.mjs --link plink_xxxx --amount 9900
 ```
 
 Use `--url https://<your-site>/api/payments/webhook` to target a deployment.
-The script reads `RAZORPAY_WEBHOOK_SECRET` from the environment or `.dev.vars`.
-Do one live ₹1 QR payment after verification, then refund it.
+The script reads `RAZORPAY_WEBHOOK_SECRET` from the environment or `.dev.vars`,
+and `--amount` must match the intent exactly. Do one live ₹1 payment after
+verification, then refund it.
 
 Create/update accounts with the admin endpoint:
 

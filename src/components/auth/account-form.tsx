@@ -88,7 +88,40 @@ export function AccountForm() {
 function AccountContent() {
   const searchParams = useSearchParams();
   const next = safeNext(searchParams.get('next'));
+  const paidIntent = searchParams.get('paid');
   const { user, loading, refresh, logout } = useAuth();
+
+  // Razorpay sends the payer back with ?paid=<intent>. The webhook is what
+  // grants access, so nudge the server to reconcile and then refresh the
+  // badge. This is best-effort: failures are harmless.
+  useEffect(() => {
+    if (!paidIntent) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        await fetch(
+          apiUrl(
+            `/api/payments/intent?id=${encodeURIComponent(paidIntent)}&reconcile=1`,
+          ),
+          { credentials: 'include', cache: 'no-store' },
+        );
+      } catch {
+        // The webhook may still land; the next visit will pick it up.
+      }
+      if (!cancelled) await refresh();
+
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('paid');
+        window.history.replaceState(null, '', url.toString());
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paidIntent, refresh]);
 
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
@@ -420,7 +453,7 @@ function AccountContent() {
           </button>
 
           <p className="mt-1 text-center text-xs text-fd-muted-foreground">
-            You can activate AI access with UPI from your account page.
+            You can activate AI access with UPI or a card from your account page.
           </p>
         </form>
       )}
@@ -537,7 +570,7 @@ function SignedInDashboard({
           <p className="mt-3 text-sm text-fd-muted-foreground">
             {user.paid && user.paidUntil
               ? `Active until ${new Date(user.paidUntil).toLocaleDateString()}. Extend any time; days add to the end.`
-              : 'Pay with UPI to activate the AI assistant instantly.'}
+              : 'Pay with UPI or a card to activate the AI assistant instantly.'}
           </p>
           <button
             type="button"

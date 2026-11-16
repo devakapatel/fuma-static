@@ -4,14 +4,14 @@ import {
   deletePaymentIntent,
   findIntentForUser,
   insertPaymentIntent,
-  markIntentQrCreated,
-  QR_TTL_SECONDS,
+  markIntentLinkCreated,
+  PAYMENT_TTL_SECONDS,
   resolvePurchase,
   toPublicIntent,
 } from '../../_lib/payments';
 import {
-  closeUpiQr,
-  createUpiQr,
+  cancelPaymentLink,
+  createPaymentLink,
   razorpayConfigured,
 } from '../../_lib/razorpay';
 import {
@@ -20,10 +20,15 @@ import {
 } from '../../_lib/users';
 import type { Env, PagesFunction } from '../../_lib/types';
 
-function qrName(purpose: 'ai' | 'donation' | 'ad'): string {
-  if (purpose === 'ai') return 'T9 AI access';
-  if (purpose === 'donation') return 'T9 donation';
-  return 'T9 advertisement';
+function siteOrigin(request: Request, env: Env): string {
+  if (env.SITE_URL) {
+    try {
+      return new URL(env.SITE_URL).origin;
+    } catch {
+      // Fall back to the request origin if SITE_URL is malformed.
+    }
+  }
+  return new URL(request.url).origin;
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -59,7 +64,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   const purchase = resolved.purchase;
 
-  // Reuse the generic attempts table to stop QR spam.
+  // Reuse the generic attempts table to stop link spam.
   const rateKey = `payment:${auth.user.id}`;
   if (await isLoginRateLimited(env.DB, rateKey)) {
     return jsonResponse(request, env, { error: 'too_many_attempts' }, 429);
@@ -68,7 +73,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const intentId = crypto.randomUUID();
   const now = Date.now();
-  const expiresAt = new Date(now + QR_TTL_SECONDS * 1000);
+  const expiresAt = new Date(now + PAYMENT_TTL_SECONDS * 1000);
 
   try {
     await insertPaymentIntent(env.DB, {
@@ -87,47 +92,44 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(request, env, { error: 'server_error' }, 500);
   }
 
-  let qrId: string | null = null;
+  let linkId: string | null = null;
   try {
-    const qr = await createUpiQr(env, {
+    const link = await createPaymentLink(env, {
       amount: purchase.amount,
-      name: qrName(purchase.purpose),
       description: purchase.label,
-      closeBy: Math.floor(expiresAt.getTime() / 1000),
+      referenceId: intentId,
+      expireBy: Math.floor(expiresAt.getTime() / 1000),
       notes: {
         intent_id: intentId,
         user_id: auth.user.id,
         purpose: purchase.purpose,
       },
+      callbackUrl: `${siteOrigin(request, env)}/account?paid=${encodeURIComponent(intentId)}`,
     });
-    qrId = qr.id;
+    linkId = link.id;
 
-    if (!qr.image_url) {
-      throw new Error('Razorpay returned no QR image URL');
-    }
-
-    const qrExpiresAt = qr.close_by
-      ? new Date(qr.close_by * 1000).toISOString()
+    const linkExpiresAt = link.expire_by
+      ? new Date(link.expire_by * 1000).toISOString()
       : expiresAt.toISOString();
 
-    await markIntentQrCreated(env.DB, intentId, {
-      id: qr.id,
-      imageUrl: qr.image_url,
-      expiresAt: qrExpiresAt,
+    await markIntentLinkCreated(env.DB, intentId, {
+      id: link.id,
+      shortUrl: link.short_url,
+      expiresAt: linkExpiresAt,
     });
 
     const row = await findIntentForUser(env.DB, intentId, auth.user.id);
-    if (!row) throw new Error('Payment intent disappeared after QR creation');
+    if (!row) throw new Error('Payment intent disappeared after link creation');
 
     return jsonResponse(request, env, { intent: toPublicIntent(row) }, 201);
   } catch (error) {
-    console.error('Could not create Razorpay QR:', error);
+    console.error('Could not create Razorpay Payment Link:', error);
 
-    if (qrId) {
+    if (linkId) {
       try {
-        await closeUpiQr(env, qrId);
-      } catch (closeError) {
-        console.error('Could not close orphaned Razorpay QR:', closeError);
+        await cancelPaymentLink(env, linkId);
+      } catch (cancelError) {
+        console.error('Could not cancel orphaned Razorpay Payment Link:', cancelError);
       }
     }
     await deletePaymentIntent(env.DB, intentId).catch(() => undefined);

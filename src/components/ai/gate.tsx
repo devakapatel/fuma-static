@@ -113,7 +113,7 @@ export function AIAccessGate() {
                   <ArrowRight className="size-4" />
                 </Link>
                 <p className="text-center text-xs text-fd-muted-foreground">
-                  Pay with UPI on your account page. Access activates
+                  Pay with UPI or a card on your account page. Access activates
                   automatically.
                 </p>
                 <a

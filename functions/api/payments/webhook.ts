@@ -1,32 +1,122 @@
 import { jsonResponse, optionsResponse } from '../../_lib/http';
 import {
   claimIntentPaid,
+  findIntentById,
+  findIntentByLinkId,
   findIntentByQrId,
   fulfilIntent,
   recordWebhookEvent,
+  type PaymentIntentRow,
 } from '../../_lib/payments';
 import { verifyWebhookSignature } from '../../_lib/razorpay';
 import type { Env, PagesFunction } from '../../_lib/types';
+
+interface WebhookPayment {
+  id?: string;
+  amount?: number;
+  currency?: string;
+  status?: string;
+}
 
 interface RazorpayWebhookBody {
   event?: string;
   payload?: {
     qr_code?: { entity?: { id?: string } };
-    payment?: {
+    payment_link?: {
       entity?: {
         id?: string;
-        amount?: number;
-        currency?: string;
         status?: string;
+        amount?: number;
+        amount_paid?: number;
+        currency?: string;
       };
     };
+    payment?: { entity?: WebhookPayment };
   };
 }
 
+interface SettleInput {
+  intent: PaymentIntentRow | null;
+  paymentId: string | undefined;
+  amount: number | undefined;
+  currency: string | undefined;
+  status: string | undefined;
+  eventId: string;
+  eventType: string;
+  unknown: string;
+}
+
 /**
- * Razorpay calls this endpoint after a UPI payment is made against one of our
- * QR codes. It is the authoritative fulfilment path; the browser only polls
- * the intent status.
+ * Common fulfilment path for every payment-producing webhook. It is safe to
+ * call more than once: `claimIntentPaid` and `fulfilIntent` are guarded, so a
+ * retried delivery cannot credit an account twice.
+ */
+async function settleIntent(
+  request: Request,
+  env: Env,
+  input: SettleInput,
+): Promise<Response> {
+  const found = input.intent;
+
+  if (!found) {
+    console.warn(`Razorpay webhook ${input.eventType}: ${input.unknown}`);
+    return jsonResponse(request, env, { ok: true, ignored: input.unknown });
+  }
+
+  if (!input.paymentId) {
+    return jsonResponse(request, env, { error: 'invalid_request' }, 400);
+  }
+
+  if (input.currency && input.currency !== found.currency) {
+    console.error(
+      `Razorpay webhook ${input.eventType}: currency mismatch for ${found.id} (${input.currency} != ${found.currency})`,
+    );
+    return jsonResponse(request, env, { ok: true, ignored: 'currency_mismatch' });
+  }
+
+  if (Number(input.amount) !== found.amount) {
+    console.error(
+      `Razorpay webhook ${input.eventType}: amount mismatch for ${found.id} (${input.amount} != ${found.amount})`,
+    );
+    return jsonResponse(request, env, { ok: true, ignored: 'amount_mismatch' });
+  }
+
+  if (input.status && input.status !== 'captured' && input.status !== 'authorized') {
+    return jsonResponse(request, env, { ok: true, ignored: `payment_${input.status}` });
+  }
+
+  let intent = found;
+
+  if (intent.status !== 'paid') {
+    await claimIntentPaid(env.DB, intent.id, input.paymentId);
+    // Re-read either way: another delivery may have won the race.
+    intent = (await findIntentById(env.DB, intent.id)) ?? intent;
+  }
+
+  if (intent.status !== 'paid') {
+    return jsonResponse(request, env, { ok: true, ignored: `intent_${intent.status}` });
+  }
+
+  if (intent.razorpay_payment_id && intent.razorpay_payment_id !== input.paymentId) {
+    console.error(
+      `Razorpay webhook ${input.eventType}: intent ${intent.id} already paid by ${intent.razorpay_payment_id}, got ${input.paymentId}`,
+    );
+    return jsonResponse(request, env, { ok: true, ignored: 'already_paid' });
+  }
+
+  if (intent.fulfilled_at) {
+    await recordWebhookEvent(env.DB, { id: input.eventId, type: input.eventType });
+    return jsonResponse(request, env, { ok: true, duplicate: true });
+  }
+
+  await fulfilIntent(env.DB, intent, { id: input.eventId, type: input.eventType });
+  return jsonResponse(request, env, { ok: true });
+}
+
+/**
+ * Razorpay calls this endpoint after a Payment Link is paid. The browser only
+ * polls the intent; this webhook (and the reconciliation fallback in
+ * `/api/payments/intent`) is what actually grants access.
  */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!env.DB || !env.RAZORPAY_WEBHOOK_SECRET) {
@@ -50,79 +140,49 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(request, env, { error: 'invalid_request' }, 400);
   }
 
-  if (body.event !== 'qr_code.credited') {
-    return jsonResponse(request, env, { ok: true, ignored: body.event ?? 'unknown' });
-  }
+  const eventType = body.event ?? 'unknown';
+  const eventHeader = request.headers.get('x-razorpay-event-id');
 
-  const qrId = body.payload?.qr_code?.entity?.id;
-  const payment = body.payload?.payment?.entity;
-  const paymentId = payment?.id;
+  if (eventType === 'payment_link.paid') {
+    const link = body.payload?.payment_link?.entity;
+    const payment = body.payload?.payment?.entity;
+    const paymentId = payment?.id;
 
-  if (!qrId || !paymentId) {
-    return jsonResponse(request, env, { error: 'invalid_request' }, 400);
-  }
-
-  const found = await findIntentByQrId(env.DB, qrId);
-  if (!found) {
-    // The QR may belong to another Razorpay product on the same account.
-    console.warn(`Razorpay webhook: no intent for QR ${qrId}`);
-    return jsonResponse(request, env, { ok: true, ignored: 'unknown_qr' });
-  }
-
-  if (payment.currency && payment.currency !== found.currency) {
-    console.error(
-      `Razorpay webhook: currency mismatch for ${found.id} (${payment.currency} != ${found.currency})`,
-    );
-    return jsonResponse(request, env, { ok: true, ignored: 'currency_mismatch' });
-  }
-
-  if (Number(payment.amount) !== found.amount) {
-    console.error(
-      `Razorpay webhook: amount mismatch for ${found.id} (${payment.amount} != ${found.amount})`,
-    );
-    return jsonResponse(request, env, { ok: true, ignored: 'amount_mismatch' });
-  }
-
-  if (payment.status && payment.status !== 'captured' && payment.status !== 'authorized') {
-    return jsonResponse(request, env, { ok: true, ignored: `payment_${payment.status}` });
-  }
-
-  const eventId = request.headers.get('x-razorpay-event-id') ?? `qr:${paymentId}`;
-  let intent = found;
-
-  if (intent.status !== 'paid') {
-    const claimed = await claimIntentPaid(env.DB, intent.id, paymentId);
-    if (!claimed) {
-      // Another delivery won the race, or the intent is no longer payable.
-      intent = (await findIntentByQrId(env.DB, qrId)) ?? intent;
-    } else {
-      intent = {
-        ...intent,
-        status: 'paid',
-        razorpay_payment_id: paymentId,
-        paid_at: new Date().toISOString(),
-      };
+    if (link?.status && link.status !== 'paid') {
+      return jsonResponse(request, env, { ok: true, ignored: `link_${link.status}` });
     }
+
+    return settleIntent(request, env, {
+      intent: link?.id ? await findIntentByLinkId(env.DB, link.id) : null,
+      paymentId,
+      amount: payment?.amount,
+      currency: payment?.currency,
+      status: payment?.status,
+      eventId: eventHeader ?? `link:${paymentId ?? 'unknown'}`,
+      eventType,
+      unknown: link?.id ? `unknown_link:${link.id}` : 'missing_link',
+    });
   }
 
-  if (intent.status !== 'paid') {
-    return jsonResponse(request, env, { ok: true, ignored: `intent_${intent.status}` });
+  // Legacy path for intents created while the site used the QR Codes API.
+  if (eventType === 'qr_code.credited') {
+    const qrId = body.payload?.qr_code?.entity?.id;
+    const payment = body.payload?.payment?.entity;
+    const paymentId = payment?.id;
+
+    return settleIntent(request, env, {
+      intent: qrId ? await findIntentByQrId(env.DB, qrId) : null,
+      paymentId,
+      amount: payment?.amount,
+      currency: payment?.currency,
+      status: payment?.status,
+      eventId: eventHeader ?? `qr:${paymentId ?? 'unknown'}`,
+      eventType,
+      unknown: qrId ? `unknown_qr:${qrId}` : 'missing_qr',
+    });
   }
 
-  if (intent.razorpay_payment_id && intent.razorpay_payment_id !== paymentId) {
-    console.error(
-      `Razorpay webhook: intent ${intent.id} already paid by ${intent.razorpay_payment_id}, got ${paymentId}`,
-    );
-    return jsonResponse(request, env, { ok: true, ignored: 'already_paid' });
-  }
-
-  if (intent.fulfilled_at) {
-    await recordWebhookEvent(env.DB, { id: eventId, type: 'qr_code.credited' });
-    return jsonResponse(request, env, { ok: true, duplicate: true });
-  }
-
-  await fulfilIntent(env.DB, intent, { id: eventId, type: 'qr_code.credited' });
-  return jsonResponse(request, env, { ok: true });
+  return jsonResponse(request, env, { ok: true, ignored: eventType });
 };
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request, env }) =>
