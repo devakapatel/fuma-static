@@ -2,13 +2,17 @@
 
 import { Suspense, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
+  ArrowUpRight,
+  Heart,
   Loader2,
   LockKeyhole,
   LogOut,
   Mail,
+  Megaphone,
+  Sparkles,
   UserPlus,
 } from 'lucide-react';
 import { useAuth, type AuthUser } from './auth-context';
@@ -20,6 +24,8 @@ import { buttonVariants } from '@/components/ui/button';
 const inputClass =
   'rounded-lg border bg-fd-background px-3 py-2 text-sm outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-fd-ring disabled:opacity-60';
 
+const telegramUrl = 'https://t.me/+yeaJ8DtX2uA0YjA9';
+
 type Step = 'email' | 'signin' | 'signup';
 
 function normalizeEmailInput(value: string): string {
@@ -27,7 +33,16 @@ function normalizeEmailInput(value: string): string {
 }
 
 function AccountSkeleton() {
-  return <div className="not-prose h-72 w-full max-w-md animate-pulse rounded-2xl bg-fd-muted" />;
+  return (
+    <div className="not-prose w-full space-y-4">
+      <div className="h-20 w-2/3 animate-pulse rounded-lg bg-fd-muted" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="h-32 animate-pulse rounded-xl bg-fd-muted" />
+        <div className="h-32 animate-pulse rounded-xl bg-fd-muted" />
+        <div className="h-32 animate-pulse rounded-xl bg-fd-muted" />
+      </div>
+    </div>
+  );
 }
 
 export function AccountForm() {
@@ -39,7 +54,6 @@ export function AccountForm() {
 }
 
 function AccountContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const next = safeNext(searchParams.get('next'));
   const { user, loading, refresh, logout } = useAuth();
@@ -50,11 +64,6 @@ function AccountContent() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  function onAuthenticated() {
-    router.replace(next);
-    router.refresh();
-  }
 
   function changeEmail() {
     setStep('email');
@@ -133,7 +142,6 @@ function AccountContent() {
       }
 
       await refresh();
-      onAuthenticated();
     } catch {
       setError('Network error. Please try again.');
     } finally {
@@ -186,7 +194,6 @@ function AccountContent() {
       }
 
       await refresh();
-      onAuthenticated();
     } catch {
       setError('Network error. Please try again.');
     } finally {
@@ -198,11 +205,11 @@ function AccountContent() {
 
   if (user) {
     return (
-      <SignedInCard
+      <SignedInDashboard
         user={user}
         next={next}
         onLogout={() => {
-          void logout().then(() => router.refresh());
+          void logout();
         }}
       />
     );
@@ -212,7 +219,7 @@ function AccountContent() {
     step === 'email'
       ? {
           icon: <Mail className="size-4.5" />,
-          title: 'Account',
+          title: 'Sign in or create an account',
           subtitle: 'Enter your email to continue.',
         }
       : step === 'signin'
@@ -228,14 +235,14 @@ function AccountContent() {
           };
 
   return (
-    <div className="not-prose w-full max-w-md rounded-2xl border bg-fd-card p-6 text-fd-card-foreground shadow-sm">
+    <div className="not-prose w-full max-w-xl">
       <div className="mb-5 flex items-center gap-2">
         <span className="flex size-9 items-center justify-center rounded-xl bg-fd-primary/10 text-fd-primary">
           {copy.icon}
         </span>
         <div>
-          <h2 className="text-base font-semibold leading-tight">{copy.title}</h2>
-          <p className="text-xs text-fd-muted-foreground">{copy.subtitle}</p>
+          <h2 className="text-lg font-semibold leading-tight">{copy.title}</h2>
+          <p className="text-sm text-fd-muted-foreground">{copy.subtitle}</p>
         </div>
       </div>
 
@@ -399,7 +406,7 @@ function ErrorMessage({ children }: { children: ReactNode }) {
   );
 }
 
-function SignedInCard({
+function SignedInDashboard({
   user,
   next,
   onLogout,
@@ -408,56 +415,180 @@ function SignedInCard({
   next: string;
   onLogout: () => void;
 }) {
+  const paymentUrl = process.env.NEXT_PUBLIC_PAYMENT_URL || telegramUrl;
+  const donateUrl = process.env.NEXT_PUBLIC_DONATE_URL || telegramUrl;
+  const advertiseUrl = process.env.NEXT_PUBLIC_ADVERTISE_URL || telegramUrl;
+
   return (
-    <div className="not-prose w-full max-w-md rounded-2xl border bg-fd-card p-6 text-fd-card-foreground shadow-sm">
-      <div className="flex items-center gap-2">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-fd-primary/10 text-fd-primary">
-          <LockKeyhole className="size-4.5" />
-        </span>
+    <div className="not-prose w-full">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
         <div className="min-w-0">
-          <p className="text-xs text-fd-muted-foreground">Signed in as</p>
-          <p className="truncate text-base font-semibold leading-tight">{user.email}</p>
+          <p className="text-sm text-fd-muted-foreground">Signed in as</p>
+          <h2 className="truncate text-2xl font-semibold tracking-tight">{user.email}</h2>
+          <p className="mt-1 text-sm text-fd-muted-foreground">
+            Member since {new Date(user.createdAt).toLocaleDateString()}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={next}
+            className={cn(
+              buttonVariants({ variant: 'primary', className: 'gap-2 rounded-full' }),
+            )}
+          >
+            Go to docs
+            <ArrowRight className="size-4" />
+          </Link>
+          <button
+            type="button"
+            onClick={onLogout}
+            className={cn(
+              buttonVariants({ variant: 'secondary', className: 'gap-2 rounded-full' }),
+            )}
+          >
+            <LogOut className="size-4" />
+            Log out
+          </button>
         </div>
       </div>
 
-      <div className="mt-5 rounded-xl border bg-fd-secondary/50 px-3 py-2.5 text-sm">
-        <span className="text-fd-muted-foreground">AI access: </span>
-        {user.paid && user.paidUntil ? (
-          <span className="font-medium">
-            Active until {new Date(user.paidUntil).toLocaleDateString()}
-          </span>
-        ) : (
-          <span className="font-medium">Not active</span>
-        )}
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <section className="rounded-xl border p-5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-5 text-fd-primary" />
+              <h3 className="font-semibold">AI access</h3>
+            </div>
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-xs font-medium',
+                user.paid
+                  ? 'bg-green-500/10 text-green-700 dark:text-green-400'
+                  : 'bg-fd-muted text-fd-muted-foreground',
+              )}
+            >
+              {user.paid ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+          <p className="mt-3 text-sm text-fd-muted-foreground">
+            {user.paid && user.paidUntil
+              ? `Active until ${new Date(user.paidUntil).toLocaleDateString()}.`
+              : 'Activated by the admin after payment.'}
+          </p>
+          {!user.paid && (
+            <a
+              href={paymentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-fd-primary hover:underline"
+            >
+              Get AI access
+              <ArrowUpRight className="size-3.5" />
+            </a>
+          )}
+        </section>
+
+        <a
+          href={donateUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group rounded-xl border p-5 transition-colors hover:bg-fd-accent"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Heart className="size-5 text-fd-primary" />
+              <h3 className="font-semibold">Donate</h3>
+            </div>
+            <ArrowUpRight className="size-4 text-fd-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+          </div>
+          <p className="mt-3 text-sm text-fd-muted-foreground">
+            Support hosting, new notes, and the AI assistant.
+          </p>
+        </a>
+
+        <a
+          href={advertiseUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group rounded-xl border p-5 transition-colors hover:bg-fd-accent"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Megaphone className="size-5 text-fd-primary" />
+              <h3 className="font-semibold">Advertise with us</h3>
+            </div>
+            <ArrowUpRight className="size-4 text-fd-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+          </div>
+          <p className="mt-3 text-sm text-fd-muted-foreground">
+            Put your product in front of students across semesters.
+          </p>
+        </a>
       </div>
 
-      {!user.paid && (
-        <p className="mt-3 text-xs text-fd-muted-foreground">
-          AI access is activated by the admin after payment.
-        </p>
-      )}
+      <section className="mt-8">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Your ads</h2>
+            <p className="text-sm text-fd-muted-foreground">
+              Ads you submit will appear here.
+            </p>
+          </div>
+          <a
+            href={advertiseUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              buttonVariants({ variant: 'secondary', className: 'gap-2 rounded-full' }),
+            )}
+          >
+            Submit an ad
+            <ArrowUpRight className="size-4" />
+          </a>
+        </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Link
-          href={next}
-          className={cn(
-            buttonVariants({ variant: 'primary', className: 'gap-2 rounded-full' }),
-          )}
-        >
-          Continue
-          <ArrowRight className="size-4" />
-        </Link>
-        <button
-          type="button"
-          onClick={onLogout}
-          className={cn(
-            buttonVariants({ variant: 'secondary', className: 'gap-2 rounded-full' }),
-          )}
-        >
-          <LogOut className="size-4" />
-          Log out
-        </button>
-      </div>
+        <div className="mt-4 rounded-xl border border-dashed p-8 text-center">
+          <Megaphone className="mx-auto size-6 text-fd-muted-foreground" />
+          <p className="mt-2 text-sm font-medium">No ads yet</p>
+          <p className="mt-1 text-sm text-fd-muted-foreground">
+            Have something to promote? Get in touch and we&apos;ll add it here.
+          </p>
+          <a
+            href={advertiseUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-fd-primary hover:underline"
+          >
+            Advertise with us
+            <ArrowUpRight className="size-3.5" />
+          </a>
+        </div>
+      </section>
+
+      <section className="mt-8 border-t pt-6">
+        <h2 className="text-lg font-semibold">More</h2>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href={next}
+            className={cn(
+              buttonVariants({ variant: 'secondary', className: 'gap-2 rounded-full' }),
+            )}
+          >
+            Browse docs
+            <ArrowRight className="size-4" />
+          </Link>
+          <a
+            href={telegramUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              buttonVariants({ variant: 'secondary', className: 'gap-2 rounded-full' }),
+            )}
+          >
+            Join the Telegram group
+            <ArrowUpRight className="size-4" />
+          </a>
+        </div>
+      </section>
     </div>
   );
 }
