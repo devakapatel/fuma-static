@@ -78,6 +78,16 @@ export default function HomePage() {
             About
             <ArrowRight className="size-3.5 opacity-60" />
           </Link>
+          <Link
+            href="/account"
+            className={cn(
+              'inline-flex items-center rounded-full px-5 py-2.5 text-sm font-medium transition-colors',
+              'bg-fd-primary text-fd-primary-foreground hover:bg-fd-primary/80',
+            )}
+          >
+            Account
+            <ArrowRight className="size-3.5 opacity-60" />
+          </Link>
         </div>
       </section>
     </main>

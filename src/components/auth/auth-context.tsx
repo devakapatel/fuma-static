@@ -12,7 +12,7 @@ import {
 import { apiUrl } from '@/lib/api';
 
 export interface AuthUser {
-  username: string;
+  email: string;
   paid: boolean;
   paidUntil: string | null;
   createdAt: string;

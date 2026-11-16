@@ -6,10 +6,10 @@ import {
 import { jsonResponse, optionsResponse } from '../../_lib/http';
 import {
   clearLoginAttempts,
-  findUserByUsername,
+  findUserByEmail,
   isLoginRateLimited,
-  isValidUsername,
-  normalizeUsername,
+  isValidEmail,
+  normalizeEmail,
   recordFailedLogin,
   toPublicUser,
 } from '../../_lib/users';
@@ -27,13 +27,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(request, env, { error: 'invalid_request' }, 400);
   }
 
-  const { username, password } = (body ?? {}) as { username?: unknown; password?: unknown };
-  if (typeof username !== 'string' || typeof password !== 'string' || password.length === 0) {
+  const { email, password } = (body ?? {}) as { email?: unknown; password?: unknown };
+  if (typeof email !== 'string' || typeof password !== 'string' || password.length === 0) {
     return jsonResponse(request, env, { error: 'invalid_request' }, 400);
   }
 
-  const normalized = normalizeUsername(username);
-  if (!isValidUsername(normalized)) {
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
     return jsonResponse(request, env, { error: 'invalid_credentials' }, 401);
   }
 
@@ -44,7 +44,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(request, env, { error: 'too_many_attempts' }, 429);
   }
 
-  const user = await findUserByUsername(env.DB, normalized);
+  const user = await findUserByEmail(env.DB, normalized);
   const valid = user ? await verifyPassword(password, user.password_hash) : false;
 
   if (!user || !valid) {

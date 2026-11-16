@@ -2,11 +2,11 @@ import { hashPassword, isAdmin } from '../../_lib/auth';
 import { jsonResponse, optionsResponse } from '../../_lib/http';
 import {
   createUser,
-  findUserByUsername,
+  findUserByEmail,
+  isValidEmail,
   isValidPassword,
-  isValidUsername,
   listUsers,
-  normalizeUsername,
+  normalizeEmail,
   setPaidUntil,
   setUserPassword,
   toPublicUser,
@@ -46,19 +46,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(request, env, { error: 'invalid_request' }, 400);
   }
 
-  const { username, password, paidUntil } = (body ?? {}) as {
-    username?: unknown;
+  const { email, password, paidUntil } = (body ?? {}) as {
+    email?: unknown;
     password?: unknown;
     paidUntil?: unknown;
   };
 
-  if (typeof username !== 'string' || typeof password !== 'string') {
+  if (typeof email !== 'string' || typeof password !== 'string') {
     return jsonResponse(request, env, { error: 'invalid_request' }, 400);
   }
 
-  const normalized = normalizeUsername(username);
-  if (!isValidUsername(normalized)) {
-    return jsonResponse(request, env, { error: 'invalid_username' }, 400);
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
+    return jsonResponse(request, env, { error: 'invalid_email' }, 400);
   }
   if (!isValidPassword(password)) {
     return jsonResponse(request, env, { error: 'invalid_password' }, 400);
@@ -69,13 +69,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(request, env, { error: 'invalid_paid_until' }, 400);
   }
 
-  const existing = await findUserByUsername(env.DB, normalized);
+  const existing = await findUserByEmail(env.DB, normalized);
   if (existing) {
-    return jsonResponse(request, env, { error: 'username_taken' }, 409);
+    return jsonResponse(request, env, { error: 'email_taken' }, 409);
   }
 
   const user = await createUser(env.DB, {
-    username: normalized,
+    email: normalized,
     passwordHash: await hashPassword(password),
     paidUntil: parsedPaidUntil,
   });
@@ -93,13 +93,17 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(request, env, { error: 'invalid_request' }, 400);
   }
 
-  const payload = (body ?? {}) as { username?: unknown; password?: unknown; paidUntil?: unknown };
-  if (typeof payload.username !== 'string') {
+  const payload = (body ?? {}) as { email?: unknown; password?: unknown; paidUntil?: unknown };
+  if (typeof payload.email !== 'string') {
     return jsonResponse(request, env, { error: 'invalid_request' }, 400);
   }
 
-  const normalized = normalizeUsername(payload.username);
-  const user = await findUserByUsername(env.DB, normalized);
+  const normalized = normalizeEmail(payload.email);
+  if (!isValidEmail(normalized)) {
+    return jsonResponse(request, env, { error: 'invalid_email' }, 400);
+  }
+
+  const user = await findUserByEmail(env.DB, normalized);
   if (!user) {
     return jsonResponse(request, env, { error: 'user_not_found' }, 404);
   }
@@ -119,7 +123,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
     await setPaidUntil(env.DB, normalized, parsedPaidUntil);
   }
 
-  const updated = await findUserByUsername(env.DB, normalized);
+  const updated = await findUserByEmail(env.DB, normalized);
   return jsonResponse(request, env, { user: updated ? toPublicUser(updated) : null });
 };
 

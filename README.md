@@ -32,9 +32,12 @@ In the project, you can see:
 
 ### Auth and the AI paywall
 
-The AI chat is restricted to paid users. Accounts use a username/password stored
+The AI chat is restricted to paid users. Accounts use an email/password stored
 in D1 (`t9-auth`), sessions are signed HttpOnly cookies, and the paid flag is
-`users.paid_until`. Enforcement lives in `functions/api/chat.ts` and
+`users.paid_until`. At `/account`, the page checks whether the email is already
+registered and then shows either the login or the create-account password
+fields. New accounts start unpaid; AI access is granted by the admin afterwards.
+Enforcement lives in `functions/api/chat.ts` and
 `functions/api/search-query.ts`, not in the UI.
 
 Required Pages secrets (set in the Cloudflare dashboard): `SESSION_SECRET` and
@@ -47,12 +50,12 @@ Create/update accounts with the admin endpoint:
 curl -X POST https://t9.pages.dev/api/admin/users \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"username":"student1","password":"a-long-password","paidUntil":"2027-03-31T00:00:00Z"}'
+  -d '{"email":"student@example.com","password":"a-long-password","paidUntil":"2027-03-31T00:00:00Z"}'
 ```
 
-Use `PATCH` with `{"username":"student1","paidUntil":"..."}` to change access
-and `paidUntil: null` to revoke it. Passwords can be reset with the same PATCH
-and a `password` field.
+Use `PATCH` with `{"email":"student@example.com","paidUntil":"..."}` to change
+access and `paidUntil: null` to revoke it. Passwords can be reset with the same
+PATCH and a `password` field.
 
 Local full-stack testing (runs the real Pages Functions):
 

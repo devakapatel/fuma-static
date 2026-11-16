@@ -2,7 +2,7 @@ import type { D1Database } from './types';
 
 export interface UserRow {
   id: string;
-  username: string;
+  email: string;
   password_hash: string;
   paid_until: string | null;
   session_version: number;
@@ -11,7 +11,7 @@ export interface UserRow {
 }
 
 export interface PublicUser {
-  username: string;
+  email: string;
   paid: boolean;
   paidUntil: string | null;
   createdAt: string;
@@ -20,12 +20,13 @@ export interface PublicUser {
 const LOGIN_MAX_ATTEMPTS = 8;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
-export function normalizeUsername(raw: string): string {
+export function normalizeEmail(raw: string): string {
   return raw.trim().toLowerCase();
 }
 
-export function isValidUsername(username: string): boolean {
-  return /^[a-z0-9_]{3,32}$/.test(username);
+export function isValidEmail(email: string): boolean {
+  if (email.length < 3 || email.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export function isValidPassword(password: string): boolean {
@@ -34,15 +35,15 @@ export function isValidPassword(password: string): boolean {
 
 export function toPublicUser(user: UserRow): PublicUser {
   return {
-    username: user.username,
+    email: user.email,
     paid: Boolean(user.paid_until) && Date.parse(user.paid_until as string) > Date.now(),
     paidUntil: user.paid_until,
     createdAt: user.created_at,
   };
 }
 
-export async function findUserByUsername(db: D1Database, username: string): Promise<UserRow | null> {
-  return db.prepare('SELECT * FROM users WHERE username = ?').bind(username).first<UserRow>();
+export async function findUserByEmail(db: D1Database, email: string): Promise<UserRow | null> {
+  return db.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<UserRow>();
 }
 
 export async function findUserById(db: D1Database, id: string): Promise<UserRow | null> {
@@ -56,17 +57,17 @@ export async function listUsers(db: D1Database): Promise<UserRow[]> {
 
 export async function createUser(
   db: D1Database,
-  input: { username: string; passwordHash: string; paidUntil: string | null },
+  input: { email: string; passwordHash: string; paidUntil: string | null },
 ): Promise<UserRow> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
 
   await db
     .prepare(
-      `INSERT INTO users (id, username, password_hash, paid_until, session_version, created_at, updated_at)
+      `INSERT INTO users (id, email, password_hash, paid_until, session_version, created_at, updated_at)
        VALUES (?, ?, ?, ?, 1, ?, ?)`,
     )
-    .bind(id, input.username, input.passwordHash, input.paidUntil, now, now)
+    .bind(id, input.email, input.passwordHash, input.paidUntil, now, now)
     .run();
 
   const user = await findUserById(db, id);
@@ -74,25 +75,25 @@ export async function createUser(
   return user;
 }
 
-export async function setUserPassword(db: D1Database, username: string, passwordHash: string): Promise<void> {
+export async function setUserPassword(db: D1Database, email: string, passwordHash: string): Promise<void> {
   await db
     .prepare(
       `UPDATE users
        SET password_hash = ?, session_version = session_version + 1, updated_at = ?
-       WHERE username = ?`,
+       WHERE email = ?`,
     )
-    .bind(passwordHash, new Date().toISOString(), username)
+    .bind(passwordHash, new Date().toISOString(), email)
     .run();
 }
 
 export async function setPaidUntil(
   db: D1Database,
-  username: string,
+  email: string,
   paidUntil: string | null,
 ): Promise<void> {
   await db
-    .prepare('UPDATE users SET paid_until = ?, updated_at = ? WHERE username = ?')
-    .bind(paidUntil, new Date().toISOString(), username)
+    .prepare('UPDATE users SET paid_until = ?, updated_at = ? WHERE email = ?')
+    .bind(paidUntil, new Date().toISOString(), email)
     .run();
 }
 

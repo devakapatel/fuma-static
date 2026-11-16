@@ -21,10 +21,13 @@ export function AIAccessGate() {
 
   if (loading) return null;
 
+  // The account page has its own forms; don't float a second entry point over it.
+  if (pathname === '/account') return null;
+
   if (!user) {
     return (
       <Link
-        href={`/login?next=${encodeURIComponent(pathname)}`}
+        href={`/account?next=${encodeURIComponent(pathname)}`}
         className={cn(
           buttonVariants({
             variant: 'secondary',
@@ -34,7 +37,7 @@ export function AIAccessGate() {
         )}
       >
         <MessageCircleIcon className="size-4.5" />
-        Sign in
+        Ask AI
       </Link>
     );
   }
@@ -77,7 +80,7 @@ export function AIAccessGate() {
                     AI is for paid members
                   </h2>
                   <p className="mt-2 text-sm leading-relaxed text-fd-muted-foreground">
-                    Your account <span className="font-medium">{user.username}</span> is signed
+                    Your account <span className="font-medium">{user.email}</span> is signed
                     in, but AI access is not active yet.
                   </p>
                 </div>

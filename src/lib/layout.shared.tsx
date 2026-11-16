@@ -1,5 +1,4 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { AuthMenu } from '@/components/auth/auth-menu';
 import { appTitle, gitConfig } from './shared';
 
 export function baseOptions(): BaseLayoutProps {
@@ -7,7 +6,6 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       // JSX supported
       title: appTitle,
-      children: <AuthMenu />,
     },
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };

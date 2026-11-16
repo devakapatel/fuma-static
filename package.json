@@ -8,9 +8,9 @@
     "start": "serve out",
     "types:check": "next typegen && tsc --noEmit",
     "lint": "oxlint",
-    "db:migrate:local": "npx wrangler d1 migrations apply t9-auth --local",
-    "db:migrate:remote": "npx wrangler d1 migrations apply t9-auth --remote",
-    "dev:pages": "npx wrangler pages dev"
+    "db:migrate:local": "bunx wrangler d1 migrations apply t9-auth --local",
+    "db:migrate:remote": "bunx wrangler d1 migrations apply t9-auth --remote",
+    "dev:pages": "bunx wrangler pages dev"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.118",
