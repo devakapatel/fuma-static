@@ -25,10 +25,15 @@ import {
 import { useAuth, type AuthUser } from './auth-context';
 import { apiUrl } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { addDays, formatDate, formatMoney } from '@/lib/format';
 import { safeNext } from '@/lib/safe-redirect';
 import { buttonVariants } from '@/components/ui/button';
 import { PaymentDialog } from '@/components/payments/payment-dialog';
-import type { PaymentPurpose } from '@/components/payments/types';
+import type {
+  AiPlan,
+  PaymentPurpose,
+  PaymentsConfig,
+} from '@/components/payments/types';
 
 const inputClass =
   'rounded-lg border bg-fd-background px-3 py-2 text-sm outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-fd-ring disabled:opacity-60';
@@ -66,6 +71,7 @@ function AccountContent() {
   const searchParams = useSearchParams();
   const next = safeNext(searchParams.get('next'));
   const paidIntent = searchParams.get('paid');
+  const donateIntent = searchParams.get('donate') === '1';
   const { user, loading, refresh, logout } = useAuth();
 
   // Razorpay sends the payer back with ?paid=<intent>. The webhook is what
@@ -254,6 +260,7 @@ function AccountContent() {
       <SignedInDashboard
         user={user}
         next={next}
+        initialPurpose={donateIntent ? 'donation' : null}
         onRefresh={refresh}
         onLogout={() => {
           void logout();
@@ -460,15 +467,62 @@ function ErrorMessage({ children }: { children: ReactNode }) {
 function SignedInDashboard({
   user,
   next,
+  initialPurpose,
   onRefresh,
   onLogout,
 }: {
   user: AuthUser;
   next: string;
+  initialPurpose: PaymentPurpose | null;
   onRefresh: () => Promise<void>;
   onLogout: () => void;
 }) {
-  const [paymentPurpose, setPaymentPurpose] = useState<PaymentPurpose | null>(null);
+  const [paymentPurpose, setPaymentPurpose] = useState<PaymentPurpose | null>(
+    initialPurpose,
+  );
+
+  // Drop ?donate=1 once the dialog has opened so a refresh does not reopen it.
+  useEffect(() => {
+    if (!initialPurpose) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('donate')) return;
+    url.searchParams.delete('donate');
+    window.history.replaceState(null, '', url.toString());
+  }, [initialPurpose]);
+  const [aiPlan, setAiPlan] = useState<AiPlan | null>(null);
+  const [aiPreview, setAiPreview] = useState<{ start: string; end: string } | null>(
+    null,
+  );
+
+  // Prices and durations live on the server; fetch them so the card shows the
+  // same dates the purchase will actually grant.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(apiUrl('/api/payments/config'), { cache: 'no-store' })
+      .then(async (response) =>
+        response.ok ? ((await response.json()) as PaymentsConfig) : null,
+      )
+      .then((data) => {
+        if (cancelled || !data) return;
+        const plan = data.aiPlans[0] ?? null;
+        setAiPlan(plan);
+        if (plan) {
+          const start = new Date();
+          setAiPreview({
+            start: formatDate(start),
+            end: formatDate(addDays(start, plan.days)),
+          });
+        }
+      })
+      .catch(() => {
+        // The card falls back to generic copy if the config cannot load.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const closePayment = useCallback(() => setPaymentPurpose(null), []);
 
@@ -525,8 +579,14 @@ function SignedInDashboard({
           </div>
           <p className="mt-3 text-sm text-fd-muted-foreground">
             {user.paid && user.paidUntil
-              ? `Active until ${new Date(user.paidUntil).toLocaleDateString()}. Extend any time; days add to the end.`
-              : 'Pay with UPI or a card to activate the AI assistant instantly.'}
+              ? `Active until ${formatDate(user.paidUntil)}.${
+                  aiPlan
+                    ? ` Extending adds ${aiPlan.days} days to that date.`
+                    : ''
+                }`
+              : aiPlan && aiPreview
+                ? `${formatMoney(aiPlan.amount)} for ${aiPlan.days} days. Activate today and access runs ${aiPreview.start} – ${aiPreview.end}.`
+                : 'Pay with UPI or a card to activate the AI assistant instantly.'}
           </p>
           <button
             type="button"
@@ -551,7 +611,7 @@ function SignedInDashboard({
             <ArrowUpRight className="size-4 text-fd-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
           </div>
           <p className="mt-3 text-sm text-fd-muted-foreground">
-            Support hosting, new notes, and the AI assistant.
+            Support hosting and new notes.
           </p>
         </button>
 
@@ -604,6 +664,7 @@ function SignedInDashboard({
       <PaymentDialog
         purpose={paymentPurpose}
         aiActive={user.paid}
+        paidUntil={user.paidUntil}
         onClose={closePayment}
         onPaid={onRefresh}
       />

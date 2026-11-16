@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { addDays, formatDate, formatMoney } from '@/lib/format';
 import { buttonVariants } from '@/components/ui/button';
 import type {
   PaymentIntent,
@@ -23,10 +24,6 @@ import type {
 
 const fieldClass =
   'w-full rounded-lg border bg-fd-background px-3 py-2 text-sm outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-fd-ring disabled:opacity-60';
-
-function formatMoney(paise: number): string {
-  return `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-}
 
 function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -61,6 +58,7 @@ type Phase = 'loading' | 'choose' | 'creating' | 'paying' | 'paid' | 'error';
 interface PaymentDialogProps {
   purpose: PaymentPurpose | null;
   aiActive: boolean;
+  paidUntil: string | null;
   onClose: () => void;
   onPaid: () => void | Promise<void>;
 }
@@ -68,6 +66,7 @@ interface PaymentDialogProps {
 export function PaymentDialog({
   purpose,
   aiActive,
+  paidUntil,
   onClose,
   onPaid,
 }: PaymentDialogProps) {
@@ -80,6 +79,8 @@ export function PaymentDialog({
   const [copied, setCopied] = useState(false);
 
   const [donationRupees, setDonationRupees] = useState('');
+  // Captured when the dialog opens so date arithmetic stays out of render.
+  const [aiToday, setAiToday] = useState(0);
 
   const onPaidRef = useRef(onPaid);
   useEffect(() => {
@@ -107,6 +108,7 @@ export function PaymentDialog({
       .then((data) => {
         if (cancelled) return;
         setConfig(data);
+        setAiToday(Date.now());
         const preset =
           data.donation.presets[1] ??
           data.donation.presets[0] ??
@@ -282,9 +284,15 @@ export function PaymentDialog({
       ? aiActive
         ? 'Days add to the end of your current access.'
         : 'Pay with UPI, cards, or netbanking and access activates automatically.'
-      : 'Support hosting, new notes, and the AI assistant.';
+      : 'Support hosting and new notes.';
 
   const selectedAi = config?.aiPlans[0];
+  const aiUntil = selectedAi
+    ? addDays(
+        aiActive && paidUntil ? new Date(paidUntil) : new Date(aiToday),
+        selectedAi.days,
+      )
+    : null;
   const donationPaise = Math.round(Number(donationRupees) * 100);
   const selectedAmount =
     purpose === 'ai' ? selectedAi?.amount : donationPaise;
@@ -375,6 +383,13 @@ export function PaymentDialog({
                   <span className="text-xs text-fd-muted-foreground">
                     {config.aiPlans[0].blurb}
                   </span>
+                  {aiUntil && (
+                    <span className="mt-1 block text-xs text-fd-muted-foreground">
+                      {aiActive
+                        ? `Extends your access to ${formatDate(aiUntil)}.`
+                        : `Pay today and access runs until ${formatDate(aiUntil)}.`}
+                    </span>
+                  )}
                 </span>
                 <span className="shrink-0 text-sm font-semibold">
                   {formatMoney(config.aiPlans[0].amount)}
@@ -604,7 +619,9 @@ export function PaymentDialog({
             </p>
             <p className="mt-4 text-sm text-fd-muted-foreground">
               {purpose === 'ai'
-                ? 'AI access is active for this account.'
+                ? paidUntil
+                  ? `AI access is active until ${formatDate(paidUntil)}.`
+                  : 'AI access is active for this account.'
                 : 'Thank you for supporting the project.'}
             </p>
             <button
