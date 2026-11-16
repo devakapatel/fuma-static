@@ -48,9 +48,11 @@ polls the intent until Razorpay's `payment_link.paid` webhook marks it paid.
 AI access extends `users.paid_until` from `max(now, current paid_until)`, so
 renewals stack.
 
-Pricing lives in `functions/_lib/payments.ts` (AI plans, donation bounds and
-presets, ad plans). Amounts are stored in paise. Ad payments are recorded but
-ads still require manual review before publishing.
+Pricing lives in `functions/_lib/payments.ts` (AI plans, donation minimum and
+presets, ad plans). Amounts are stored in paise. Donations have no upper limit
+in our validation, so Razorpay's per-method transaction limits are the practical
+ceiling. Ad payments are recorded but ads still require manual review before
+publishing.
 
 Links expire after 20 minutes (`PAYMENT_TTL_SECONDS`), which satisfies
 Razorpay's 15-minute `expire_by` minimum. The `callback_url` sends the payer

@@ -7,6 +7,7 @@ export interface AiPlan {
   label: string;
   amount: number;
   days: number;
+  blurb: string;
 }
 
 export interface AdPlan {
@@ -24,7 +25,6 @@ export interface PaymentsConfig {
   aiPlans: AiPlan[];
   donation: {
     min: number;
-    max: number;
     presets: number[];
   };
   adPlans: AdPlan[];

@@ -224,13 +224,10 @@ export function PaymentDialog({
       if (
         !Number.isFinite(rupees) ||
         !Number.isFinite(paise) ||
-        paise < config.donation.min ||
-        paise > config.donation.max
+        paise < config.donation.min
       ) {
         setError(
-          `Enter an amount between ${formatMoney(
-            config.donation.min,
-          )} and ${formatMoney(config.donation.max)}.`,
+          `Enter at least ${formatMoney(config.donation.min)}.`,
         );
         return;
       }
@@ -429,7 +426,7 @@ export function PaymentDialog({
                         {plan.label}
                       </span>
                       <span className="text-xs text-fd-muted-foreground">
-                        Full AI assistant and search
+                        {plan.blurb}
                       </span>
                     </span>
                     <span className="flex items-center gap-3">
@@ -482,7 +479,6 @@ export function PaymentDialog({
                       type="number"
                       inputMode="decimal"
                       min={config.donation.min / 100}
-                      max={config.donation.max / 100}
                       step="1"
                       value={donationRupees}
                       onChange={(event) => setDonationRupees(event.target.value)}
@@ -490,8 +486,8 @@ export function PaymentDialog({
                     />
                   </span>
                   <span className="text-xs text-fd-muted-foreground">
-                    Any amount from {formatMoney(config.donation.min)} to{' '}
-                    {formatMoney(config.donation.max)}.
+                    Any amount from {formatMoney(config.donation.min)}. There is
+                    no upper limit.
                   </span>
                 </label>
               </div>

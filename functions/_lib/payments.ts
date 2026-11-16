@@ -15,6 +15,7 @@ export interface AiPlan {
   label: string;
   amount: number; // paise
   days: number;
+  blurb: string;
 }
 
 export interface AdPlan {
@@ -30,18 +31,35 @@ export interface AdPlan {
  * Amounts are in paise, as required by Razorpay.
  */
 export const AI_PLANS: AiPlan[] = [
-  { id: 'ai-30', label: '30 days', amount: 9_900, days: 30 },
-  { id: 'ai-90', label: '90 days', amount: 24_900, days: 90 },
-  { id: 'ai-180', label: '180 days', amount: 39_900, days: 180 },
+  {
+    id: 'ai-1',
+    label: '1 device · 30 days',
+    amount: 4_900,
+    days: 30,
+    blurb: 'Use the assistant on one device at a time.',
+  },
+  {
+    id: 'ai-2',
+    label: '2 devices · 30 days',
+    amount: 8_900,
+    days: 30,
+    blurb: 'Use the assistant on two devices at a time.',
+  },
 ];
 
 export const DONATION = {
-  min: 1_000, // ₹10
-  max: 5_000_000, // ₹50,000
+  min: 5_000, // ₹50
   presets: [5_000, 10_000, 25_000, 50_000],
 };
 
 export const AD_PLANS: AdPlan[] = [
+  {
+    id: 'ad-1',
+    label: '1 day',
+    amount: 10_000,
+    durationDays: 1,
+    blurb: 'A single day for a quick announcement.',
+  },
   {
     id: 'ad-7',
     label: '1 week',
@@ -52,16 +70,9 @@ export const AD_PLANS: AdPlan[] = [
   {
     id: 'ad-30',
     label: '1 month',
-    amount: 150_000,
+    amount: 180_000,
     durationDays: 30,
     blurb: 'The usual slot for a product or a batch.',
-  },
-  {
-    id: 'ad-90',
-    label: '3 months',
-    amount: 399_000,
-    durationDays: 90,
-    blurb: 'Stay visible across a full semester.',
   },
 ];
 
@@ -156,7 +167,7 @@ export function resolvePurchase(input: PurchaseInput): ResolvePurchaseResult {
     if (typeof input.amount !== 'number' || !Number.isInteger(input.amount)) {
       return { purchase: null, error: 'invalid_amount' };
     }
-    if (input.amount < DONATION.min || input.amount > DONATION.max) {
+    if (input.amount < DONATION.min) {
       return { purchase: null, error: 'invalid_amount' };
     }
     return {
@@ -205,7 +216,13 @@ export function publicPaymentsConfig(configured: boolean, testMode: boolean) {
     currency: 'INR',
     configured,
     testMode,
-    aiPlans: AI_PLANS.map(({ id, label, amount, days }) => ({ id, label, amount, days })),
+    aiPlans: AI_PLANS.map(({ id, label, amount, days, blurb }) => ({
+      id,
+      label,
+      amount,
+      days,
+      blurb,
+    })),
     donation: { ...DONATION },
     adPlans: AD_PLANS.map(({ id, label, amount, durationDays, blurb }) => ({
       id,
