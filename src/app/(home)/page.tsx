@@ -82,7 +82,8 @@ export default function HomePage() {
             href="/account?donate=1"
             className={cn(
               'inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition-colors',
-              'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground',
+              'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20',
+              'dark:text-emerald-300 dark:hover:bg-emerald-500/15',
             )}
           >
             <Heart className="mr-1.5 size-3.5 opacity-70" />
