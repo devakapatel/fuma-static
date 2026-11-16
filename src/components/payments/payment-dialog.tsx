@@ -79,6 +79,7 @@ export function PaymentDialog({
   const [copied, setCopied] = useState(false);
 
   const [donationRupees, setDonationRupees] = useState('');
+  const [anonymous, setAnonymous] = useState(false);
   // Captured when the dialog opens so date arithmetic stays out of render.
   const [aiToday, setAiToday] = useState(0);
 
@@ -96,6 +97,7 @@ export function PaymentDialog({
     setError(null);
     setIntent(null);
     setCopied(false);
+    setAnonymous(false);
 
     fetch(apiUrl('/api/payments/config'), {
       credentials: 'include',
@@ -222,6 +224,7 @@ export function PaymentDialog({
         return;
       }
       body.amount = paise;
+      body.anonymous = anonymous;
     }
 
     setPhase('creating');
@@ -257,6 +260,7 @@ export function PaymentDialog({
     purpose,
     config,
     donationRupees,
+    anonymous,
   ]);
 
   const copyPaymentLink = useCallback(async () => {
@@ -449,6 +453,25 @@ export function PaymentDialog({
                   >
                     Any amount from {formatMoney(config.donation.min)}. There is
                     no upper limit.
+                  </span>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={anonymous}
+                    onChange={(event) => setAnonymous(event.target.checked)}
+                    className="mt-0.5 size-4 shrink-0 accent-fd-primary"
+                  />
+                  <span>
+                    <span className="font-medium">
+                      Keep my donation anonymous
+                    </span>
+                    <span className="mt-1 block text-xs text-fd-muted-foreground">
+                      Donations are public: your email and amount will be listed
+                      on the Donors page. Tick this to appear as
+                      &ldquo;Anonymous&rdquo; instead.
+                    </span>
                   </span>
                 </label>
               </div>

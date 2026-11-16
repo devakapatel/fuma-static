@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, ArrowUpRight, Heart } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Heart, HeartHandshake } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { source } from '@/lib/source';
 
@@ -88,6 +88,16 @@ export default function HomePage() {
           >
             Account
             <ArrowRight className="size-3.5 opacity-60" />
+          </Link>
+          <Link
+            href="/donors"
+            className={cn(
+              'inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition-colors',
+              'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground',
+            )}
+          >
+            <HeartHandshake className="mr-1.5 size-3.5 opacity-70" />
+            Donors
           </Link>
           <Link
             href="/about"

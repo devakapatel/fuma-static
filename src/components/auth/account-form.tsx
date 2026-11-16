@@ -647,6 +647,15 @@ function SignedInDashboard({
             Browse docs
             <ArrowRight className="size-4" />
           </Link>
+          <Link
+            href="/donors"
+            className={cn(
+              buttonVariants({ variant: 'secondary', className: 'gap-2 rounded-full' }),
+            )}
+          >
+            <Heart className="size-4" />
+            Donors
+          </Link>
           <a
             href={telegramUrl}
             target="_blank"

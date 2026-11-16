@@ -68,6 +68,7 @@ interface PurchaseInput {
   purpose?: unknown;
   planId?: unknown;
   amount?: unknown;
+  anonymous?: unknown;
 }
 
 export function resolvePurchase(input: PurchaseInput): ResolvePurchaseResult {
@@ -100,6 +101,7 @@ export function resolvePurchase(input: PurchaseInput): ResolvePurchaseResult {
     if (input.amount < DONATION.min) {
       return { purchase: null, error: 'invalid_amount' };
     }
+    const anonymous = input.anonymous === true;
     return {
       purchase: {
         purpose,
@@ -108,7 +110,7 @@ export function resolvePurchase(input: PurchaseInput): ResolvePurchaseResult {
         planId: null,
         label: 'Donation',
         durationDays: null,
-        metadata: null,
+        metadata: anonymous ? JSON.stringify({ anonymous: 'true' }) : null,
       },
       error: null,
     };
@@ -324,6 +326,56 @@ export async function listIntentsForUser(
     .bind(userId, limit)
     .all<PaymentIntentRow>();
   return result.results ?? [];
+}
+
+// ---------- public donor list ----------
+
+export interface DonationRow {
+  id: string;
+  amount: number;
+  paid_at: string | null;
+  metadata: string | null;
+  email: string;
+}
+
+/**
+ * Paid donations with the donor's account email. Anonymous donations are
+ * flagged in `metadata`; the caller decides whether to expose the email.
+ */
+export async function listPaidDonations(
+  db: D1Database,
+  limit = 200,
+): Promise<{
+  donors: DonationRow[];
+  donationCount: number;
+  totalAmount: number;
+}> {
+  const [list, summary] = await Promise.all([
+    db
+      .prepare(
+        `SELECT p.id, p.amount, p.paid_at, p.metadata, u.email
+         FROM payment_intents p
+         JOIN users u ON u.id = p.user_id
+         WHERE p.purpose = 'donation' AND p.status = 'paid'
+         ORDER BY COALESCE(p.paid_at, p.created_at) DESC
+         LIMIT ?`,
+      )
+      .bind(limit)
+      .all<DonationRow>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total
+         FROM payment_intents
+         WHERE purpose = 'donation' AND status = 'paid'`,
+      )
+      .first<{ count: number; total: number }>(),
+  ]);
+
+  return {
+    donors: list.results ?? [],
+    donationCount: summary?.count ?? 0,
+    totalAmount: summary?.total ?? 0,
+  };
 }
 
 /**
