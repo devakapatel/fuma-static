@@ -25,6 +25,8 @@ export interface Env {
   ADMIN_TOKEN: string;
   SITE_URL?: string;
   ALLOWED_ORIGIN?: string;
+  /** Comma-separated email domains allowed to register, e.g. "indusuni.ac.in". */
+  ALLOWED_EMAIL_DOMAINS?: string;
   CHAT_ENDPOINT: string;
   CHAT_MODEL: string;
   RAZORPAY_KEY_ID?: string;

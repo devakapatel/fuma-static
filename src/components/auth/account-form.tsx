@@ -165,7 +165,9 @@ function AccountContent() {
         setError(
           data.error === 'invalid_email'
             ? 'Enter a valid email address.'
-            : 'Could not check that email. Please try again.',
+            : data.error === 'email_domain_not_allowed'
+              ? 'Use your Indus University email (@indusuni.ac.in).'
+              : 'Could not check that email. Please try again.',
         );
         return;
       }
@@ -247,13 +249,15 @@ function AccountContent() {
         setError(
           data.error === 'invalid_email'
             ? 'Enter a valid email address.'
-            : data.error === 'invalid_password'
-              ? 'Password must be 8–200 characters.'
-              : data.error === 'too_many_attempts'
-                ? 'Too many attempts. Try again in a few minutes.'
-                : data.error === 'server_misconfigured'
-                  ? 'Sign-up is not configured on this deployment yet.'
-                  : 'Could not create your account. Please try again.',
+            : data.error === 'email_domain_not_allowed'
+              ? 'Use your Indus University email (@indusuni.ac.in).'
+              : data.error === 'invalid_password'
+                ? 'Password must be 8–200 characters.'
+                : data.error === 'too_many_attempts'
+                  ? 'Too many attempts. Try again in a few minutes.'
+                  : data.error === 'server_misconfigured'
+                    ? 'Sign-up is not configured on this deployment yet.'
+                    : 'Could not create your account. Please try again.',
         );
         return;
       }
@@ -344,6 +348,10 @@ function AccountContent() {
               disabled={submitting}
               className={inputClass}
             />
+            <span className="text-xs text-fd-muted-foreground">
+              Use your university email — @indusuni.ac.in or any subdomain such
+              as @iite.indusuni.ac.in.
+            </span>
           </label>
 
           {error && <ErrorMessage>{error}</ErrorMessage>}

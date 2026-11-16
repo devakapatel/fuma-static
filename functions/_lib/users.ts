@@ -33,6 +33,36 @@ export function isValidPassword(password: string): boolean {
   return password.length >= 8 && password.length <= 200;
 }
 
+/**
+ * Only university emails may register. Matching is suffix-based, so the base
+ * domain and every subdomain pass: `@indusuni.ac.in`, `@iite.indusuni.ac.in`,
+ * `@anything.iite.indusuni.ac.in`. Override with ALLOWED_EMAIL_DOMAINS.
+ */
+export const DEFAULT_EMAIL_DOMAINS = 'indusuni.ac.in';
+
+export function emailDomain(email: string): string | null {
+  const at = email.lastIndexOf('@');
+  if (at <= 0 || at === email.length - 1) return null;
+  return email.slice(at + 1).toLowerCase();
+}
+
+export function isAllowedEmailDomain(
+  email: string,
+  allowlist: string | undefined = DEFAULT_EMAIL_DOMAINS,
+): boolean {
+  const domain = emailDomain(email);
+  if (!domain) return false;
+
+  const bases = (allowlist ?? DEFAULT_EMAIL_DOMAINS)
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase().replace(/^@/, ''))
+    .filter(Boolean);
+
+  if (bases.length === 0) return false;
+
+  return bases.some((base) => domain === base || domain.endsWith(`.${base}`));
+}
+
 export function toPublicUser(user: UserRow): PublicUser {
   return {
     email: user.email,

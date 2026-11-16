@@ -7,6 +7,7 @@ import { jsonResponse, optionsResponse } from '../../_lib/http';
 import {
   createUser,
   findUserByEmail,
+  isAllowedEmailDomain,
   isLoginRateLimited,
   isValidEmail,
   isValidPassword,
@@ -48,9 +49,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(request, env, { error: 'too_many_attempts' }, 429);
   }
 
+  // Checked before the domain rule so an existing off-domain account still
+  // gets "already registered, sign in" instead of a misleading domain error.
   if (await findUserByEmail(env.DB, normalized)) {
     await recordFailedLogin(env.DB, rateKey);
     return jsonResponse(request, env, { error: 'email_taken' }, 409);
+  }
+
+  if (!isAllowedEmailDomain(normalized, env.ALLOWED_EMAIL_DOMAINS)) {
+    await recordFailedLogin(env.DB, rateKey);
+    return jsonResponse(request, env, { error: 'email_domain_not_allowed' }, 400);
   }
 
   let user;

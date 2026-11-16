@@ -39,6 +39,12 @@ registered and then shows either the login or the create-account password
 fields. Enforcement lives in `functions/api/chat.ts` and
 `functions/api/search-query.ts`, not in the UI.
 
+Registration is limited to university emails. The default allowlist is
+`indusuni.ac.in`, matched by suffix so `@indusuni.ac.in`,
+`@iite.indusuni.ac.in`, and `@anything.iite.indusuni.ac.in` all pass. Override
+with the `ALLOWED_EMAIL_DOMAINS` secret (comma-separated). Accounts created
+before the rule still sign in; admin-created accounts are not restricted.
+
 ### Payments (Razorpay Payment Links)
 
 Signed-in users can buy AI access, donate, or buy an ad slot from `/account`.

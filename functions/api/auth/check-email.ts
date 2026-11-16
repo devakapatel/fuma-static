@@ -1,5 +1,5 @@
 import { jsonResponse, optionsResponse } from '../../_lib/http';
-import { findUserByEmail, isValidEmail, normalizeEmail } from '../../_lib/users';
+import { findUserByEmail, isAllowedEmailDomain, isValidEmail, normalizeEmail } from '../../_lib/users';
 import type { Env, PagesFunction } from '../../_lib/types';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -25,6 +25,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const user = await findUserByEmail(env.DB, normalized);
+
+  // Existing accounts can still sign in; the domain rule only stops new
+  // registrations from outside the university.
+  if (!user && !isAllowedEmailDomain(normalized, env.ALLOWED_EMAIL_DOMAINS)) {
+    return jsonResponse(request, env, { error: 'email_domain_not_allowed' }, 400);
+  }
+
   return jsonResponse(request, env, { exists: Boolean(user) });
 };
 
