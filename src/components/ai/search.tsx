@@ -12,13 +12,15 @@ import {
   useState,
 } from 'react';
 import { flushSync } from 'react-dom';
-import { ChevronDown, Check, Loader2, MessageCircleIcon, RefreshCw, SearchIcon, Send, X } from 'lucide-react';
+import { Loader2, MessageCircleIcon, RefreshCw, SearchIcon, Send, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { buttonVariants } from '../ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from 'fumadocs-ui/components/ui/popover';
 import { useChat, type UseChatHelpers } from '@ai-sdk/react';
 import { DefaultChatTransport, type Tool, type UIMessage, type UIToolInvocation } from 'ai';
 import { Markdown } from '../markdown';
+
+// Fixed model - no user selection
+const FIXED_MODEL = 'kilo-auto/free';
 
 /**
  * Concatenate the assistant's text parts for rendering.
@@ -45,129 +47,6 @@ export type ChatUIMessage = UIMessage<
 
 export type SearchTool = Tool<{ query: string; limit: number }>;
 
-// ---------- model selection ----------
-
-export interface ChatModel {
-  id: string;
-  name: string;
-}
-
-const StorageKeyModel = '__ai_chat_model';
-const FALLBACK_MODEL = 'deepseek/deepseek-v4-flash-0731:free';
-
-function useChatModels() {
-  const [models, setModels] = useState<ChatModel[]>([]);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const api = process.env.NEXT_PUBLIC_CHAT_API_URL ?? '/api/chat';
-    const modelsUrl = new URL(api.replace(/\/?chat$/, ''), window.location.origin);
-    // same origin as the chat API; local dev falls back to /api/models
-    const url =
-      api.startsWith('http')
-        ? `${new URL(api).origin}/api/models`
-        : '/api/models';
-
-    fetch(url)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
-      .then((data: { models?: ChatModel[] }) => {
-        if (!cancelled) setModels(data.models ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { models, error };
-}
-
-function useSelectedModel(): [string, (id: string) => void] {
-  const [model, setModel] = useState(() => localStorage.getItem(StorageKeyModel) ?? FALLBACK_MODEL);
-
-  const select = (id: string) => {
-    setModel(id);
-    localStorage.setItem(StorageKeyModel, id);
-  };
-
-  return [model, select];
-}
-
-function shortModelName(model: ChatModel): string {
-  // "inclusionAI: Ling 3.0 Flash VL (free)" -> "Ling 3.0 Flash VL"
-  const name = model.name.includes(':') ? model.name.split(':').slice(1).join(':').trim() : model.name;
-  return name.replace(/\s*\(free\)\s*$/i, '');
-}
-
-function ModelPicker({ className }: { className?: string }) {
-  const { models, error } = useChatModels();
-  const [model, select] = useSelectedModel();
-  const [open, setOpen] = useState(false);
-
-  const current = models.find((m) => m.id === model);
-
-  // keep persisted selection valid; fall back if the model disappeared
-  useEffect(() => {
-    if (models.length > 0 && !models.some((m) => m.id === model)) {
-      select(models[0].id);
-    }
-  }, [models, model]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        aria-label="Choose a model"
-        className={(s) =>
-          cn(
-            buttonVariants({
-              variant: 'outline',
-              size: 'sm',
-              className:
-                'gap-1.5 text-xs border-fd-primary/40 bg-fd-primary/10 text-fd-primary hover:bg-fd-primary/20 hover:text-fd-primary',
-            }),
-            s.open && 'bg-fd-primary/25 border-fd-primary/60',
-            className,
-          )
-        }
-      >
-        <span className="max-w-[140px] truncate">
-          {current ? shortModelName(current) : (model.split('/').pop()?.replace(':free', '') ?? 'Model')}
-        </span>
-        <ChevronDown className="size-3.5 text-fd-muted-foreground" />
-      </PopoverTrigger>
-      <PopoverContent className="flex flex-col gap-0.5 p-1">
-        <p className="p-2 text-xs font-medium text-fd-muted-foreground">
-          {error || models.length === 0 ? 'Failed to load models' : 'Choose a model'}
-        </p>
-        {models.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            title={item.id}
-            className={cn(
-              'flex items-center gap-1.5 px-2 py-1.5 text-start text-sm rounded-lg transition-colors',
-              item.id === model
-                ? 'bg-fd-primary/10 text-fd-primary'
-                : 'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground',
-            )}
-            onClick={() => {
-              select(item.id);
-              setOpen(false);
-            }}
-          >
-            <span className="flex-1 truncate">{shortModelName(item)}</span>
-            {item.id === model && <Check className="size-3.5 shrink-0" />}
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 const Context = createContext<{
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -186,10 +65,7 @@ export function AISearchPanelHeader({ className, ...props }: ComponentProps<'div
       {...props}
     >
       <div className="px-3 py-2 flex-1">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <p className="text-sm font-medium">AI Chat</p>
-          <ModelPicker />
-        </div>
+        <p className="text-sm font-medium">AI Chat</p>
         <p className="text-xs text-fd-muted-foreground">
           AI can be inaccurate, please verify the answers.
         </p>
@@ -465,8 +341,7 @@ export function AISearch({ children }: { children: ReactNode }) {
         return {
           body: {
             messages,
-            // read per-request so dropdown changes apply immediately
-            model: localStorage.getItem(StorageKeyModel) ?? undefined,
+            model: FIXED_MODEL,
           },
         };
       },
