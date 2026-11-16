@@ -138,11 +138,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       );
     }
 
-    if (!env.CHAT_ENDPOINT || !env.CHAT_MODEL) {
+    if (!env.CHAT_ENDPOINT) {
       return jsonResponse(
         request,
         env,
-        { error: 'Server configuration error: missing CHAT_ENDPOINT or CHAT_MODEL' },
+        { error: 'Server configuration error: missing CHAT_ENDPOINT' },
         500,
       );
     }
@@ -169,7 +169,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     uiMessages = uiMessages.slice(-maxHistoryMessages);
 
     // Fixed model - no user selection, no per-request override.
-    const model = 'kilo-auto/free';
+    const model = env.CHAT_MODEL || 'kilo-auto/free';
 
     // Current page URL, sent by the client as a `data-client` part
     const clientLocation: string | undefined = uiMessages

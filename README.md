@@ -74,6 +74,9 @@ retried once without customer details if a business requires `customer.name`.
 Required Pages secrets (set in the Cloudflare dashboard):
 
 - `SESSION_SECRET` and `ADMIN_TOKEN` for auth.
+- `CHAT_ENDPOINT` — OpenAI-compatible base URL for the assistant, e.g.
+  `https://api.kilo.ai/api/gateway/v1`. `CHAT_MODEL` is optional and defaults
+  to `kilo-auto/free`.
 - `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` from Dashboard → Account & Settings
   → API Keys.
 - `RAZORPAY_WEBHOOK_SECRET` — the secret you choose when adding the webhook.
