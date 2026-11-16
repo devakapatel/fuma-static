@@ -1,4 +1,4 @@
-export type PaymentPurpose = 'ai' | 'donation' | 'ad';
+export type PaymentPurpose = 'ai' | 'donation';
 
 export type PaymentStatus = 'created' | 'paid' | 'expired' | 'failed' | 'refunded';
 
@@ -7,14 +7,6 @@ export interface AiPlan {
   label: string;
   amount: number;
   days: number;
-  blurb: string;
-}
-
-export interface AdPlan {
-  id: string;
-  label: string;
-  amount: number;
-  durationDays: number;
   blurb: string;
 }
 
@@ -27,7 +19,6 @@ export interface PaymentsConfig {
     min: number;
     presets: number[];
   };
-  adPlans: AdPlan[];
 }
 
 export interface PaymentIntent {

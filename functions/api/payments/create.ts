@@ -56,7 +56,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       purpose?: unknown;
       planId?: unknown;
       amount?: unknown;
-      details?: unknown;
     },
   );
   if (!resolved.purchase) {

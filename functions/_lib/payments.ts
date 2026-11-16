@@ -1,7 +1,11 @@
 import type { D1Database } from './types';
 import { findUserById } from './users';
 
-export type PaymentPurpose = 'ai' | 'donation' | 'ad';
+/**
+ * Advertisements are arranged directly with the admin, so there is no `ad`
+ * payment purpose. Advertising never touches the payment flow.
+ */
+export type PaymentPurpose = 'ai' | 'donation';
 
 export type PublicPaymentStatus =
   | 'created'
@@ -18,32 +22,19 @@ export interface AiPlan {
   blurb: string;
 }
 
-export interface AdPlan {
-  id: string;
-  label: string;
-  amount: number; // paise
-  durationDays: number;
-  blurb: string;
-}
-
 /**
  * Prices live here so the UI and the webhook fulfilment always agree.
  * Amounts are in paise, as required by Razorpay.
+ *
+ * One plan only: a single device keeps the infrastructure simple.
  */
 export const AI_PLANS: AiPlan[] = [
   {
     id: 'ai-1',
-    label: '1 device · 30 days',
+    label: '30 days',
     amount: 4_900,
     days: 30,
-    blurb: 'Use the assistant on one device at a time.',
-  },
-  {
-    id: 'ai-2',
-    label: '2 devices · 30 days',
-    amount: 8_900,
-    days: 30,
-    blurb: 'Use the assistant on two devices at a time.',
+    blurb: 'Use the assistant on one device at a time for 30 days.',
   },
 ];
 
@@ -51,30 +42,6 @@ export const DONATION = {
   min: 5_000, // ₹50
   presets: [5_000, 10_000, 25_000, 50_000],
 };
-
-export const AD_PLANS: AdPlan[] = [
-  {
-    id: 'ad-1',
-    label: '1 day',
-    amount: 10_000,
-    durationDays: 1,
-    blurb: 'A single day for a quick announcement.',
-  },
-  {
-    id: 'ad-7',
-    label: '1 week',
-    amount: 50_000,
-    durationDays: 7,
-    blurb: 'A short run for a launch or an event.',
-  },
-  {
-    id: 'ad-30',
-    label: '1 month',
-    amount: 180_000,
-    durationDays: 30,
-    blurb: 'The usual slot for a product or a batch.',
-  },
-];
 
 /**
  * How long a payment link stays payable. Razorpay requires `expire_by` to be
@@ -101,43 +68,6 @@ interface PurchaseInput {
   purpose?: unknown;
   planId?: unknown;
   amount?: unknown;
-  details?: unknown;
-}
-
-function parseAdDetails(value: unknown): { details: string | null; error: string | null } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { details: null, error: 'invalid_details' };
-  }
-
-  const { title, url, note } = value as Record<string, unknown>;
-
-  if (typeof title !== 'string') return { details: null, error: 'invalid_details' };
-  const cleanTitle = title.trim();
-  if (cleanTitle.length < 3 || cleanTitle.length > 120) {
-    return { details: null, error: 'invalid_details' };
-  }
-
-  const details: Record<string, string> = { title: cleanTitle };
-
-  if (url !== undefined) {
-    if (typeof url !== 'string') return { details: null, error: 'invalid_details' };
-    const cleanUrl = url.trim();
-    if (cleanUrl.length > 0) {
-      if (cleanUrl.length > 300 || !/^https?:\/\//i.test(cleanUrl)) {
-        return { details: null, error: 'invalid_details' };
-      }
-      details.url = cleanUrl;
-    }
-  }
-
-  if (note !== undefined) {
-    if (typeof note !== 'string') return { details: null, error: 'invalid_details' };
-    const cleanNote = note.trim();
-    if (cleanNote.length > 600) return { details: null, error: 'invalid_details' };
-    if (cleanNote.length > 0) details.note = cleanNote;
-  }
-
-  return { details: JSON.stringify(details), error: null };
 }
 
 export function resolvePurchase(input: PurchaseInput): ResolvePurchaseResult {
@@ -184,30 +114,6 @@ export function resolvePurchase(input: PurchaseInput): ResolvePurchaseResult {
     };
   }
 
-  if (purpose === 'ad') {
-    const plan =
-      input.planId === undefined
-        ? AD_PLANS[0]
-        : AD_PLANS.find((candidate) => candidate.id === input.planId);
-    if (!plan) return { purchase: null, error: 'invalid_plan' };
-    const parsed = parseAdDetails(input.details);
-    if (parsed.error || !parsed.details) {
-      return { purchase: null, error: parsed.error ?? 'invalid_details' };
-    }
-    return {
-      purchase: {
-        purpose,
-        amount: plan.amount,
-        currency: 'INR',
-        planId: plan.id,
-        label: `Advertisement · ${plan.label}`,
-        durationDays: plan.durationDays,
-        metadata: parsed.details,
-      },
-      error: null,
-    };
-  }
-
   return { purchase: null, error: 'invalid_purpose' };
 }
 
@@ -224,13 +130,6 @@ export function publicPaymentsConfig(configured: boolean, testMode: boolean) {
       blurb,
     })),
     donation: { ...DONATION },
-    adPlans: AD_PLANS.map(({ id, label, amount, durationDays, blurb }) => ({
-      id,
-      label,
-      amount,
-      durationDays,
-      blurb,
-    })),
   };
 }
 

@@ -45,8 +45,6 @@ function errorMessage(code: string | undefined): string {
       return 'Too many attempts. Wait a few minutes and try again.';
     case 'invalid_amount':
       return 'Enter a valid donation amount.';
-    case 'invalid_details':
-      return 'Check the ad details and try again.';
     case 'invalid_plan':
       return 'Choose a valid plan.';
     case 'unauthenticated':
@@ -81,12 +79,7 @@ export function PaymentDialog({
   const [now, setNow] = useState(0);
   const [copied, setCopied] = useState(false);
 
-  const [aiPlanId, setAiPlanId] = useState('');
   const [donationRupees, setDonationRupees] = useState('');
-  const [adPlanId, setAdPlanId] = useState('');
-  const [adTitle, setAdTitle] = useState('');
-  const [adUrl, setAdUrl] = useState('');
-  const [adNote, setAdNote] = useState('');
 
   const onPaidRef = useRef(onPaid);
   useEffect(() => {
@@ -102,9 +95,6 @@ export function PaymentDialog({
     setError(null);
     setIntent(null);
     setCopied(false);
-    setAdTitle('');
-    setAdUrl('');
-    setAdNote('');
 
     fetch(apiUrl('/api/payments/config'), {
       credentials: 'include',
@@ -117,8 +107,6 @@ export function PaymentDialog({
       .then((data) => {
         if (cancelled) return;
         setConfig(data);
-        setAiPlanId(data.aiPlans[0]?.id ?? '');
-        setAdPlanId(data.adPlans[0]?.id ?? '');
         const preset =
           data.donation.presets[1] ??
           data.donation.presets[0] ??
@@ -212,13 +200,13 @@ export function PaymentDialog({
     const body: Record<string, unknown> = { purpose };
 
     if (purpose === 'ai') {
-      const plan = config.aiPlans.find((candidate) => candidate.id === aiPlanId);
+      const plan = config.aiPlans[0];
       if (!plan) {
-        setError('Choose a plan.');
+        setError('AI access is not available right now.');
         return;
       }
       body.planId = plan.id;
-    } else if (purpose === 'donation') {
+    } else {
       const rupees = Number(donationRupees);
       const paise = Math.round(rupees * 100);
       if (
@@ -232,23 +220,6 @@ export function PaymentDialog({
         return;
       }
       body.amount = paise;
-    } else {
-      const plan = config.adPlans.find((candidate) => candidate.id === adPlanId);
-      if (!plan) {
-        setError('Choose an ad package.');
-        return;
-      }
-      const title = adTitle.trim();
-      if (title.length < 3) {
-        setError('Add a short ad title (at least 3 characters).');
-        return;
-      }
-      body.planId = plan.id;
-      body.details = {
-        title,
-        url: adUrl.trim(),
-        note: adNote.trim(),
-      };
     }
 
     setPhase('creating');
@@ -283,12 +254,7 @@ export function PaymentDialog({
   }, [
     purpose,
     config,
-    aiPlanId,
     donationRupees,
-    adPlanId,
-    adTitle,
-    adUrl,
-    adNote,
   ]);
 
   const copyPaymentLink = useCallback(async () => {
@@ -309,28 +275,19 @@ export function PaymentDialog({
       ? aiActive
         ? 'Extend AI access'
         : 'Get AI access'
-      : purpose === 'donation'
-        ? 'Make a donation'
-        : 'Advertise with us';
+      : 'Make a donation';
 
   const subtitle =
     purpose === 'ai'
       ? aiActive
         ? 'Days add to the end of your current access.'
         : 'Pay with UPI, cards, or netbanking and access activates automatically.'
-      : purpose === 'donation'
-        ? 'Support hosting, new notes, and the AI assistant.'
-        : 'Pay now; your creative is reviewed before it goes live.';
+      : 'Support hosting, new notes, and the AI assistant.';
 
-  const selectedAi = config?.aiPlans.find((plan) => plan.id === aiPlanId);
-  const selectedAd = config?.adPlans.find((plan) => plan.id === adPlanId);
+  const selectedAi = config?.aiPlans[0];
   const donationPaise = Math.round(Number(donationRupees) * 100);
   const selectedAmount =
-    purpose === 'ai'
-      ? selectedAi?.amount
-      : purpose === 'donation'
-        ? donationPaise
-        : selectedAd?.amount;
+    purpose === 'ai' ? selectedAi?.amount : donationPaise;
 
   const remainingMs = intent
     ? Math.max(0, Date.parse(intent.expiresAt) - now)
@@ -409,41 +366,19 @@ export function PaymentDialog({
               </p>
             )}
 
-            {purpose === 'ai' && (
-              <div className="space-y-2">
-                {config.aiPlans.map((plan) => (
-                  <label
-                    key={plan.id}
-                    className={cn(
-                      'flex cursor-pointer items-center justify-between gap-3 rounded-xl border p-3 transition-colors',
-                      aiPlanId === plan.id
-                        ? 'border-fd-primary bg-fd-primary/5'
-                        : 'hover:bg-fd-accent',
-                    )}
-                  >
-                    <span>
-                      <span className="block text-sm font-medium">
-                        {plan.label}
-                      </span>
-                      <span className="text-xs text-fd-muted-foreground">
-                        {plan.blurb}
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-3">
-                      <span className="text-sm font-semibold">
-                        {formatMoney(plan.amount)}
-                      </span>
-                      <input
-                        type="radio"
-                        name="ai-plan"
-                        value={plan.id}
-                        checked={aiPlanId === plan.id}
-                        onChange={() => setAiPlanId(plan.id)}
-                        className="accent-fd-primary"
-                      />
-                    </span>
-                  </label>
-                ))}
+            {purpose === 'ai' && config.aiPlans[0] && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
+                <span>
+                  <span className="block text-sm font-medium">
+                    {config.aiPlans[0].label}
+                  </span>
+                  <span className="text-xs text-fd-muted-foreground">
+                    {config.aiPlans[0].blurb}
+                  </span>
+                </span>
+                <span className="shrink-0 text-sm font-semibold">
+                  {formatMoney(config.aiPlans[0].amount)}
+                </span>
               </div>
             )}
 
@@ -493,82 +428,6 @@ export function PaymentDialog({
               </div>
             )}
 
-            {purpose === 'ad' && (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  {config.adPlans.map((plan) => (
-                    <label
-                      key={plan.id}
-                      className={cn(
-                        'flex cursor-pointer items-center justify-between gap-3 rounded-xl border p-3 transition-colors',
-                        adPlanId === plan.id
-                          ? 'border-fd-primary bg-fd-primary/5'
-                          : 'hover:bg-fd-accent',
-                      )}
-                    >
-                      <span>
-                        <span className="block text-sm font-medium">
-                          {plan.label}
-                        </span>
-                        <span className="text-xs text-fd-muted-foreground">
-                          {plan.blurb}
-                        </span>
-                      </span>
-                      <span className="flex items-center gap-3">
-                        <span className="text-sm font-semibold">
-                          {formatMoney(plan.amount)}
-                        </span>
-                        <input
-                          type="radio"
-                          name="ad-plan"
-                          value={plan.id}
-                          checked={adPlanId === plan.id}
-                          onChange={() => setAdPlanId(plan.id)}
-                          className="accent-fd-primary"
-                        />
-                      </span>
-                    </label>
-                  ))}
-                </div>
-
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium">Ad title</span>
-                  <input
-                    type="text"
-                    value={adTitle}
-                    onChange={(event) => setAdTitle(event.target.value)}
-                    maxLength={120}
-                    placeholder="e.g. Notes for Semester 5"
-                    className={fieldClass}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium">Link (optional)</span>
-                  <input
-                    type="url"
-                    value={adUrl}
-                    onChange={(event) => setAdUrl(event.target.value)}
-                    maxLength={300}
-                    placeholder="https://example.com"
-                    className={fieldClass}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium">Note (optional)</span>
-                  <textarea
-                    value={adNote}
-                    onChange={(event) => setAdNote(event.target.value)}
-                    maxLength={600}
-                    rows={3}
-                    placeholder="Anything we should know?"
-                    className={fieldClass}
-                  />
-                </label>
-              </div>
-            )}
-
             {config.testMode && (
               <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                 Razorpay test mode: the payment page accepts Razorpay test cards
@@ -594,7 +453,7 @@ export function PaymentDialog({
               )}
             >
               <Link2 className="size-4" />
-              {purpose === 'ad' ? 'Create link & submit' : 'Create payment link'}
+              Create payment link
               {selectedAmount && Number.isFinite(selectedAmount) ? (
                 <span className="opacity-80">· {formatMoney(selectedAmount)}</span>
               ) : null}
@@ -746,9 +605,7 @@ export function PaymentDialog({
             <p className="mt-4 text-sm text-fd-muted-foreground">
               {purpose === 'ai'
                 ? 'AI access is active for this account.'
-                : purpose === 'donation'
-                  ? 'Thank you for supporting the project.'
-                  : "Your ad is paid and pending review. We'll get in touch if we need anything."}
+                : 'Thank you for supporting the project.'}
             </p>
             <button
               type="button"

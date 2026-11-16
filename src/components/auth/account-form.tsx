@@ -28,7 +28,7 @@ import { cn } from '@/lib/cn';
 import { safeNext } from '@/lib/safe-redirect';
 import { buttonVariants } from '@/components/ui/button';
 import { PaymentDialog } from '@/components/payments/payment-dialog';
-import type { PaymentIntent, PaymentPurpose } from '@/components/payments/types';
+import type { PaymentPurpose } from '@/components/payments/types';
 
 const inputClass =
   'rounded-lg border bg-fd-background px-3 py-2 text-sm outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-fd-ring disabled:opacity-60';
@@ -36,29 +36,6 @@ const inputClass =
 const telegramUrl = 'https://t.me/+yeaJ8DtX2uA0YjA9';
 
 type Step = 'email' | 'signin' | 'signup';
-
-function formatMoney(paise: number): string {
-  return `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-}
-
-function adStatus(intent: PaymentIntent): { label: string; className: string } {
-  if (intent.status === 'paid') {
-    return {
-      label: 'Pending review',
-      className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
-    };
-  }
-  if (intent.status === 'created') {
-    return { label: 'Awaiting payment', className: 'bg-fd-muted text-fd-muted-foreground' };
-  }
-  if (intent.status === 'refunded') {
-    return { label: 'Refunded', className: 'bg-fd-muted text-fd-muted-foreground' };
-  }
-  if (intent.status === 'expired') {
-    return { label: 'Expired', className: 'bg-fd-muted text-fd-muted-foreground' };
-  }
-  return { label: 'Failed', className: 'bg-fd-error/10 text-fd-error' };
-}
 
 function normalizeEmailInput(value: string): string {
   return value.trim().toLowerCase();
@@ -492,37 +469,8 @@ function SignedInDashboard({
   onLogout: () => void;
 }) {
   const [paymentPurpose, setPaymentPurpose] = useState<PaymentPurpose | null>(null);
-  const [intents, setIntents] = useState<PaymentIntent[]>([]);
-  const [intentsLoading, setIntentsLoading] = useState(true);
-
-  const loadIntents = useCallback(async () => {
-    try {
-      const response = await fetch(apiUrl('/api/payments/list'), {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      if (!response.ok) return;
-      const data = (await response.json()) as { intents?: PaymentIntent[] };
-      setIntents(data.intents ?? []);
-    } catch {
-      // Leave the previous list in place; payment still works.
-    } finally {
-      setIntentsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadIntents();
-  }, [loadIntents]);
-
-  const onPaid = useCallback(async () => {
-    await onRefresh();
-    await loadIntents();
-  }, [onRefresh, loadIntents]);
 
   const closePayment = useCallback(() => setPaymentPurpose(null), []);
-
-  const ads = intents.filter((intent) => intent.purpose === 'ad');
 
   return (
     <div className="not-prose w-full">
@@ -607,9 +555,10 @@ function SignedInDashboard({
           </p>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setPaymentPurpose('ad')}
+        <a
+          href={telegramUrl}
+          target="_blank"
+          rel="noopener noreferrer"
           className="group rounded-xl border p-5 text-left transition-colors hover:bg-fd-accent"
         >
           <div className="flex items-center justify-between gap-2">
@@ -620,94 +569,11 @@ function SignedInDashboard({
             <ArrowUpRight className="size-4 text-fd-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
           </div>
           <p className="mt-3 text-sm text-fd-muted-foreground">
-            Put your product in front of students across semesters.
+            Ads are arranged personally, not bought online. Message the admin on
+            Telegram to discuss a slot.
           </p>
-        </button>
+        </a>
       </div>
-
-      <section className="mt-8">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Your ads</h2>
-            <p className="text-sm text-fd-muted-foreground">
-              Ads you buy appear here. Paid ads stay here while they wait for
-              review.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setPaymentPurpose('ad')}
-            className={cn(
-              buttonVariants({ variant: 'secondary', className: 'gap-2 rounded-full' }),
-            )}
-          >
-            Submit an ad
-            <ArrowUpRight className="size-4" />
-          </button>
-        </div>
-
-        <div className="mt-4 space-y-2">
-          {intentsLoading ? (
-            <div className="rounded-xl border border-dashed p-8 text-center text-sm text-fd-muted-foreground">
-              Loading your ads…
-            </div>
-          ) : ads.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-8 text-center">
-              <Megaphone className="mx-auto size-6 text-fd-muted-foreground" />
-              <p className="mt-2 text-sm font-medium">No ads yet</p>
-              <p className="mt-1 text-sm text-fd-muted-foreground">
-                Have something to promote? Buy a slot and we&apos;ll review it.
-              </p>
-              <button
-                type="button"
-                onClick={() => setPaymentPurpose('ad')}
-                className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-fd-primary hover:underline"
-              >
-                Advertise with us
-                <ArrowRight className="size-3.5" />
-              </button>
-            </div>
-          ) : (
-            ads.map((ad) => {
-              const status = adStatus(ad);
-              return (
-                <div
-                  key={ad.id}
-                  className="flex flex-wrap items-start justify-between gap-3 rounded-xl border p-4"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">
-                      {ad.details?.title ?? 'Advertisement'}
-                    </p>
-                    <p className="mt-1 text-sm text-fd-muted-foreground">
-                      {ad.label} · {formatMoney(ad.amount)} ·{' '}
-                      {new Date(ad.createdAt).toLocaleDateString()}
-                    </p>
-                    {ad.details?.url && (
-                      <a
-                        href={ad.details.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 inline-block max-w-full truncate text-sm text-fd-primary hover:underline"
-                      >
-                        {ad.details.url}
-                      </a>
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
-                      status.className,
-                    )}
-                  >
-                    {status.label}
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </section>
 
       <section className="mt-8 border-t pt-6">
         <h2 className="text-lg font-semibold">More</h2>
@@ -739,7 +605,7 @@ function SignedInDashboard({
         purpose={paymentPurpose}
         aiActive={user.paid}
         onClose={closePayment}
-        onPaid={onPaid}
+        onPaid={onRefresh}
       />
     </div>
   );

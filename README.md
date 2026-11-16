@@ -47,18 +47,18 @@ before the rule still sign in; admin-created accounts are not restricted.
 
 ### Payments (Razorpay Payment Links)
 
-Signed-in users can buy AI access, donate, or buy an ad slot from `/account`.
-Each option opens a dialog on the same page, creates a single-use Razorpay
-Payment Link, and shows the link plus a "Open payment page" button. The dialog
-polls the intent until Razorpay's `payment_link.paid` webhook marks it paid.
-AI access extends `users.paid_until` from `max(now, current paid_until)`, so
-renewals stack.
+Signed-in users can buy AI access or donate from `/account`. Advertisements
+are arranged directly with the admin over Telegram, so there is no ad payment
+flow. Each paid option opens a dialog on the same page, creates a single-use
+Razorpay Payment Link, and shows the link plus a "Open payment page" button.
+The dialog polls the intent until Razorpay's `payment_link.paid` webhook marks
+it paid. AI access extends `users.paid_until` from
+`max(now, current paid_until)`, so renewals stack.
 
-Pricing lives in `functions/_lib/payments.ts` (AI plans, donation minimum and
-presets, ad plans). Amounts are stored in paise. Donations have no upper limit
-in our validation, so Razorpay's per-method transaction limits are the practical
-ceiling. Ad payments are recorded but ads still require manual review before
-publishing.
+Pricing lives in `functions/_lib/payments.ts` (the single AI plan, donation
+minimum and presets). Amounts are stored in paise. Donations have no upper
+limit in our validation, so Razorpay's per-method transaction limits are the
+practical ceiling.
 
 Links expire after 20 minutes (`PAYMENT_TTL_SECONDS`), which satisfies
 Razorpay's 15-minute `expire_by` minimum. The `callback_url` sends the payer
