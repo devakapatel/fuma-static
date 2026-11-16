@@ -206,6 +206,7 @@ export function AISearchInput(props: ComponentProps<'form'>) {
           className={cn(
             buttonVariants({
               variant: 'default',
+              size: 'icon-sm',
               className: 'transition-all rounded-full mt-2',
             }),
           )}
