@@ -30,6 +30,42 @@ In the project, you can see:
 | `app/docs`                | The documentation layout and pages.                    |
 | `app/api/search/route.ts` | The Route Handler for search.                          |
 
+### Auth and the AI paywall
+
+The AI chat is restricted to paid users. Accounts use a username/password stored
+in D1 (`t9-auth`), sessions are signed HttpOnly cookies, and the paid flag is
+`users.paid_until`. Enforcement lives in `functions/api/chat.ts` and
+`functions/api/search-query.ts`, not in the UI.
+
+Required Pages secrets (set in the Cloudflare dashboard): `SESSION_SECRET` and
+`ADMIN_TOKEN`. The D1 binding is declared in `wrangler.toml`. Deployments still
+run through the GitHub-connected Cloudflare Pages build.
+
+Create/update accounts with the admin endpoint:
+
+```bash
+curl -X POST https://t9.pages.dev/api/admin/users \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"student1","password":"a-long-password","paidUntil":"2027-03-31T00:00:00Z"}'
+```
+
+Use `PATCH` with `{"username":"student1","paidUntil":"..."}` to change access
+and `paidUntil: null` to revoke it. Passwords can be reset with the same PATCH
+and a `password` field.
+
+Local full-stack testing (runs the real Pages Functions):
+
+```bash
+npm run db:migrate:local
+npm run build
+npm run dev:pages
+```
+
+`npm run dev` alone does not run `functions/`, so login and AI calls only work
+in the full-stack mode. Copy the required values into `.dev.vars` for local
+secrets (it is gitignored).
+
 ### Fumadocs MDX
 
 Collections are defined with the [Macro API](https://fumadocs.dev/docs/mdx/macro) in `lib/source.ts`.

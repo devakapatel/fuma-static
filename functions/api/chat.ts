@@ -15,35 +15,14 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, tool, stepCountIs, convertToModelMessages, createUIMessageStreamResponse, toUIMessageStream } from 'ai';
 import { z } from 'zod';
 import { buildSystemPrompt, chatTemperature, maxHistoryMessages } from '../../src/lib/ai-prompt';
-
-interface Env {
-  CHAT_ENDPOINT: string;
-  CHAT_MODEL: string;
-  SITE_URL?: string;
-}
-
-interface PagesFunction<Env = unknown> {
-  (args: { request: Request; env: Env; ctx: { waitUntil: (promise: Promise<unknown>) => void } }): Promise<Response> | Response;
-}
+import { authenticateRequest, isPaid } from '../_lib/auth';
+import { corsHeaders, jsonResponse, optionsResponse } from '../_lib/http';
+import type { Env, PagesFunction } from '../_lib/types';
 
 const MAX_CURRENT_PAGE_CHARS = 6000;
 const MAX_SECTION_CHARS = 6000;
 const MAX_STEP_COUNT = 6;
 const MAX_BODY_BYTES = 512 * 1024; // 512 KB request body cap
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      // CORS on ALL responses — errors from the static site must not
-      // surface as opaque CORS failures in the browser
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
-  });
-}
 
 // ---------- search_docs ----------
 
@@ -54,9 +33,16 @@ interface SearchHit {
   score: number;
 }
 
-async function searchDocs(siteUrl: string, query: string, limit: number): Promise<SearchHit[]> {
+async function searchDocs(
+  siteUrl: string,
+  query: string,
+  limit: number,
+  cookie: string | null,
+): Promise<SearchHit[]> {
   const res = await fetch(
     `${siteUrl}/api/search-query?q=${encodeURIComponent(query)}&limit=${limit}`,
+    // Forward the signed-in user's session so the search endpoint stays gated too.
+    cookie ? { headers: { Cookie: cookie } } : undefined,
   );
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
   const data = (await res.json()) as { results?: SearchHit[] };
@@ -115,11 +101,13 @@ function pageUrlFromSlug(slug: string): string {
 
 // ---------- health check ----------
 
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
-  return json({
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  return jsonResponse(request, env, {
     CHAT_ENDPOINT: env.CHAT_ENDPOINT ? 'SET' : 'MISSING',
     CHAT_MODEL: env.CHAT_MODEL ? 'SET' : 'MISSING',
     SITE_URL: env.SITE_URL ? 'SET' : 'MISSING',
+    DB: env.DB ? 'SET' : 'MISSING',
+    SESSION_SECRET: env.SESSION_SECRET ? 'SET' : 'MISSING',
   });
 };
 
@@ -127,23 +115,56 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
-    if (!env.CHAT_ENDPOINT || !env.CHAT_MODEL) {
-      return json({ error: 'Server configuration error: missing CHAT_ENDPOINT or CHAT_MODEL' }, 500);
+    if (!env.DB || !env.SESSION_SECRET) {
+      return jsonResponse(
+        request,
+        env,
+        { error: 'Server configuration error: missing DB or SESSION_SECRET' },
+        500,
+      );
     }
 
-    const siteUrl = env.SITE_URL || 'https://fuma-static.pages.dev';
+    // AI is for paid members only. Enforced here, not in the UI.
+    const auth = await authenticateRequest(request, env);
+    if (!auth.user) {
+      return jsonResponse(request, env, { error: 'unauthenticated' }, 401);
+    }
+    if (!isPaid(auth.user)) {
+      return jsonResponse(
+        request,
+        env,
+        { error: 'payment_required', paidUntil: auth.user.paid_until },
+        403,
+      );
+    }
+
+    if (!env.CHAT_ENDPOINT || !env.CHAT_MODEL) {
+      return jsonResponse(
+        request,
+        env,
+        { error: 'Server configuration error: missing CHAT_ENDPOINT or CHAT_MODEL' },
+        500,
+      );
+    }
+
+    const siteUrl = env.SITE_URL || 'https://t9.pages.dev';
 
     // request guards: body size and history length
     const contentLength = Number(request.headers.get('content-length') ?? '0');
     if (contentLength > MAX_BODY_BYTES) {
-      return json({ error: 'Request body too large' }, 413);
+      return jsonResponse(request, env, { error: 'Request body too large' }, 413);
     }
 
     const body = await request.json();
     let uiMessages = body.messages;
 
     if (!Array.isArray(uiMessages) || uiMessages.length === 0) {
-      return json({ error: 'Invalid request: messages array required and must not be empty' }, 400);
+      return jsonResponse(
+        request,
+        env,
+        { error: 'Invalid request: messages array required and must not be empty' },
+        400,
+      );
     }
     uiMessages = uiMessages.slice(-maxHistoryMessages);
 
@@ -213,7 +234,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             query: z.string().describe('The search query'),
             limit: z.number().int().min(1).max(20).default(5).describe('Max results to return'),
           }),
-          execute: async ({ query, limit }) => searchDocs(siteUrl, query, limit),
+          execute: async ({ query, limit }) =>
+            searchDocs(siteUrl, query, limit, request.headers.get('Cookie')),
         }),
         read_page: tool({
           description: 'Read a documentation page as markdown. Without section, returns the table of sections (headings + sizes) plus the first part; pass a section index to read one section in full.',
@@ -268,15 +290,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     return createUIMessageStreamResponse({
       stream: toUIMessageStream({ stream: result.stream }),
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
+      headers: corsHeaders(request, env),
     });
   } catch (error) {
     console.error('Chat error:', error);
-    return json(
+    return jsonResponse(
+      request,
+      env,
       {
         error: 'Internal server error',
         details: error instanceof Error ? { message: error.message, name: error.name } : String(error),
@@ -286,12 +306,5 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 };
 
-export const onRequestOptions: PagesFunction<Env> = async () => {
-  return new Response(null, {
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
-  });
-};
+export const onRequestOptions: PagesFunction<Env> = async ({ request, env }) =>
+  optionsResponse(request, env);

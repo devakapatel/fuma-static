@@ -1,16 +1,14 @@
 // Queries the static ZBSearch index served by the Next.js static export
 // at /api/search. The index is loaded once per isolate and cached in
 // global scope — it holds only the search index, not full page content.
+//
+// This endpoint is part of the paid AI feature: chat forwards the signed-in
+// user's session cookie so anonymous callers cannot use the index.
 
 import { create, load, search } from 'zbsearch';
-
-interface Env {
-  SITE_URL?: string;
-}
-
-interface PagesFunction<Env = unknown> {
-  (args: { request: Request; env: Env; ctx: { waitUntil: (promise: Promise<unknown>) => void } }): Promise<Response> | Response;
-}
+import { authenticateRequest, isPaid } from '../_lib/auth';
+import { jsonResponse, optionsResponse } from '../_lib/http';
+import type { Env, PagesFunction } from '../_lib/types';
 
 interface CachedDB {
   promise: Promise<unknown>;
@@ -37,16 +35,28 @@ function getDB(siteUrl: string): Promise<unknown> {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const siteUrl = env.SITE_URL || 'https://fuma-static.pages.dev';
+  if (!env.DB || !env.SESSION_SECRET) {
+    return jsonResponse(request, env, { error: 'server_misconfigured' }, 500);
+  }
+
+  const auth = await authenticateRequest(request, env);
+  if (!auth.user) {
+    return jsonResponse(request, env, { error: 'unauthenticated' }, 401);
+  }
+  if (!isPaid(auth.user)) {
+    return jsonResponse(request, env, { error: 'payment_required' }, 403);
+  }
+
+  const siteUrl = env.SITE_URL || 'https://t9.pages.dev';
   const url = new URL(request.url);
   const q = url.searchParams.get('q');
-  const limit = Number(url.searchParams.get('limit') ?? '10');
+  const requestedLimit = Number(url.searchParams.get('limit') ?? '10');
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 20)
+    : 10;
 
   if (!q || q.trim().length === 0) {
-    return new Response(JSON.stringify({ error: 'Missing "q" query parameter' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse(request, env, { error: 'Missing "q" query parameter' }, 400);
   }
 
   try {
@@ -67,19 +77,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       },
     );
 
-    return new Response(JSON.stringify({ query: q, results: hits }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store',
-      },
-    });
+    return jsonResponse(request, env, { query: q, results: hits });
   } catch (error) {
-    return new Response(
-      JSON.stringify({
+    return jsonResponse(
+      request,
+      env,
+      {
         error: 'Search failed',
         details: error instanceof Error ? error.message : String(error),
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
+      },
+      500,
     );
   }
 };
+
+export const onRequestOptions: PagesFunction<Env> = async ({ request, env }) =>
+  optionsResponse(request, env);

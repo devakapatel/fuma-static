@@ -1,31 +1,13 @@
 import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { baseOptions } from '@/lib/layout.shared';
-import { AISearch, AISearchPanel, AISearchTrigger } from '@/components/ai/search';
-import { MessageCircleIcon } from 'lucide-react';
-import { cn } from '@/lib/cn';
-import { buttonVariants } from '@/components/ui/button';
+import { AIAccessGate } from '@/components/ai/gate';
 
 export default function Layout({ children }: LayoutProps<'/[...slug]'>) {
   return (
     <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
       {children}
-
-      <AISearch>
-        <AISearchPanel />
-        <AISearchTrigger
-          position="float"
-          className={cn(
-            buttonVariants({
-              variant: 'secondary',
-              className: 'text-fd-muted-foreground rounded-2xl',
-            }),
-          )}
-        >
-          <MessageCircleIcon className="size-4.5" />
-          Ask AI
-        </AISearchTrigger>
-      </AISearch>
+      <AIAccessGate />
     </DocsLayout>
   );
 }

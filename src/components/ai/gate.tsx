@@ -1,0 +1,160 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { ArrowUpRight, LockKeyhole, MessageCircleIcon, X } from 'lucide-react';
+import { useAuth } from '@/components/auth/auth-context';
+import { cn } from '@/lib/cn';
+import { buttonVariants } from '@/components/ui/button';
+import { AISearch, AISearchPanel, AISearchTrigger } from './search';
+
+const floatButton =
+  'fixed bottom-4 gap-3 w-24 inset-e-[calc(--spacing(4)+var(--removed-body-scroll-bar-size,0px))] shadow-lg z-20 transition-[translate,opacity]';
+
+const telegramUrl = 'https://t.me/+yeaJ8DtX2uA0YjA9';
+
+export function AIAccessGate() {
+  const { user, loading } = useAuth();
+  const pathname = usePathname();
+  const [lockedOpen, setLockedOpen] = useState(false);
+
+  if (loading) return null;
+
+  if (!user) {
+    return (
+      <Link
+        href={`/login?next=${encodeURIComponent(pathname)}`}
+        className={cn(
+          buttonVariants({
+            variant: 'secondary',
+            className: 'text-fd-muted-foreground rounded-2xl',
+          }),
+          floatButton,
+        )}
+      >
+        <MessageCircleIcon className="size-4.5" />
+        Sign in
+      </Link>
+    );
+  }
+
+  if (!user.paid) {
+    const paymentUrl = process.env.NEXT_PUBLIC_PAYMENT_URL;
+
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setLockedOpen(true)}
+          className={cn(
+            buttonVariants({
+              variant: 'secondary',
+              className: 'text-fd-muted-foreground rounded-2xl',
+            }),
+            floatButton,
+          )}
+        >
+          <LockKeyhole className="size-4.5" />
+          AI access
+        </button>
+
+        {lockedOpen && (
+          <div
+            className="fixed inset-0 z-40 flex items-center justify-center bg-fd-overlay p-4"
+            onClick={() => setLockedOpen(false)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="ai-paywall-title"
+              className="w-full max-w-sm rounded-2xl border bg-fd-card p-6 text-fd-card-foreground shadow-xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="ai-paywall-title" className="text-lg font-semibold">
+                    AI is for paid members
+                  </h2>
+                  <p className="mt-2 text-sm leading-relaxed text-fd-muted-foreground">
+                    Your account <span className="font-medium">{user.username}</span> is signed
+                    in, but AI access is not active yet.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLockedOpen(false)}
+                  aria-label="Close"
+                  className={cn(
+                    buttonVariants({
+                      variant: 'ghost',
+                      size: 'icon-sm',
+                      className: 'rounded-full',
+                    }),
+                  )}
+                >
+                  <X />
+                </button>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-2">
+                {paymentUrl ? (
+                  <a
+                    href={paymentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      buttonVariants({
+                        variant: 'primary',
+                        className: 'justify-between rounded-full',
+                      }),
+                    )}
+                  >
+                    Get AI access
+                    <ArrowUpRight className="size-4" />
+                  </a>
+                ) : (
+                  <a
+                    href={telegramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      buttonVariants({
+                        variant: 'primary',
+                        className: 'justify-between rounded-full',
+                      }),
+                    )}
+                  >
+                    Contact the admin on Telegram
+                    <ArrowUpRight className="size-4" />
+                  </a>
+                )}
+                <p className="text-center text-xs text-fd-muted-foreground">
+                  Access is activated by the admin after payment.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <AISearch>
+      <AISearchPanel />
+      <AISearchTrigger
+        position="float"
+        className={cn(
+          buttonVariants({
+            variant: 'secondary',
+            className: 'text-fd-muted-foreground rounded-2xl',
+          }),
+        )}
+      >
+        <MessageCircleIcon className="size-4.5" />
+        Ask AI
+      </AISearchTrigger>
+    </AISearch>
+  );
+}

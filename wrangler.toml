@@ -1,0 +1,10 @@
+# Cloudflare Pages project (GitHub-connected; deployments run in Cloudflare CI).
+# D1 binding is read by the Pages build; secrets are set in the dashboard.
+name = "t9"
+compatibility_date = "2026-10-18"
+pages_build_output_dir = "out"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "t9-auth"
+database_id = "dc23c6d9-67c8-4041-8217-36cfe7ae7519"

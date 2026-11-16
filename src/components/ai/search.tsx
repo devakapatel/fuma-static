@@ -18,6 +18,7 @@ import { buttonVariants } from '../ui/button';
 import { useChat, type UseChatHelpers } from '@ai-sdk/react';
 import { DefaultChatTransport, type Tool, type UIMessage, type UIToolInvocation } from 'ai';
 import { Markdown } from '../markdown';
+import { apiUrl } from '@/lib/api';
 
 // Fixed model - no user selection
 const FIXED_MODEL = 'kilo-auto/free';
@@ -336,7 +337,8 @@ export function AISearch({ children }: { children: ReactNode }) {
   const chat = useChat<ChatUIMessage>({
     id: 'search',
     transport: new DefaultChatTransport({
-      api: process.env.NEXT_PUBLIC_CHAT_API_URL ?? '/api/chat',
+      api: process.env.NEXT_PUBLIC_CHAT_API_URL ?? apiUrl('/api/chat'),
+      credentials: 'include',
       prepareSendMessagesRequest({ messages }) {
         return {
           body: {
@@ -474,7 +476,7 @@ export function AISearchPanelList({ className, style, ...props }: ComponentProps
               <p className="text-xs text-fd-muted-foreground mb-1">
                 Request Failed: {chat.error.name}
               </p>
-              <p className="text-sm">{chat.error.message}</p>
+              <p className="text-sm">{friendlyChatError(chat.error)}</p>
             </div>
           )}
           {messages.map((item) => (
@@ -513,6 +515,17 @@ export function useAISearchContext() {
 
 function useChatContext() {
   return use(Context)!.chat;
+}
+
+function friendlyChatError(error: Error): string {
+  const message = error.message;
+  if (message.includes('payment_required')) {
+    return 'Your AI access is not active. Contact the admin to activate it.';
+  }
+  if (message.includes('unauthenticated')) {
+    return 'Please sign in again to use AI.';
+  }
+  return message;
 }
 
 /**
