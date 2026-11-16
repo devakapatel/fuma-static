@@ -4,6 +4,7 @@
 export interface D1Result<T = unknown> {
   results?: T[];
   success: boolean;
+  meta?: { changes?: number };
 }
 
 export interface D1PreparedStatement {
@@ -26,6 +27,9 @@ export interface Env {
   ALLOWED_ORIGIN?: string;
   CHAT_ENDPOINT: string;
   CHAT_MODEL: string;
+  RAZORPAY_KEY_ID?: string;
+  RAZORPAY_KEY_SECRET?: string;
+  RAZORPAY_WEBHOOK_SECRET?: string;
 }
 
 export interface PagesFunction<E = Env> {

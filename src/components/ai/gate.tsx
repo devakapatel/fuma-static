@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowUpRight, LockKeyhole, MessageCircleIcon, X } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, LockKeyhole, MessageCircleIcon, X } from 'lucide-react';
 import { useAuth } from '@/components/auth/auth-context';
 import { cn } from '@/lib/cn';
 import { buttonVariants } from '@/components/ui/button';
@@ -43,8 +43,6 @@ export function AIAccessGate() {
   }
 
   if (!user.paid) {
-    const paymentUrl = process.env.NEXT_PUBLIC_PAYMENT_URL;
-
     return (
       <>
         <button
@@ -101,40 +99,32 @@ export function AIAccessGate() {
               </div>
 
               <div className="mt-5 flex flex-col gap-2">
-                {paymentUrl ? (
-                  <a
-                    href={paymentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={cn(
-                      buttonVariants({
-                        variant: 'primary',
-                        className: 'justify-between rounded-full',
-                      }),
-                    )}
-                  >
-                    Get AI access
-                    <ArrowUpRight className="size-4" />
-                  </a>
-                ) : (
-                  <a
-                    href={telegramUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={cn(
-                      buttonVariants({
-                        variant: 'primary',
-                        className: 'justify-between rounded-full',
-                      }),
-                    )}
-                  >
-                    Contact the admin on Telegram
-                    <ArrowUpRight className="size-4" />
-                  </a>
-                )}
+                <Link
+                  href={`/account?next=${encodeURIComponent(pathname)}`}
+                  className={cn(
+                    buttonVariants({
+                      variant: 'primary',
+                      className: 'justify-between rounded-full',
+                    }),
+                  )}
+                  onClick={() => setLockedOpen(false)}
+                >
+                  Get AI access
+                  <ArrowRight className="size-4" />
+                </Link>
                 <p className="text-center text-xs text-fd-muted-foreground">
-                  Access is activated by the admin after payment.
+                  Pay with UPI on your account page. Access activates
+                  automatically.
                 </p>
+                <a
+                  href={telegramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-1 text-xs font-medium text-fd-muted-foreground hover:underline"
+                >
+                  Need help? Contact the admin
+                  <ArrowUpRight className="size-3" />
+                </a>
               </div>
             </div>
           </div>
