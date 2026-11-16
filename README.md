@@ -52,7 +52,7 @@ Pricing lives in `functions/_lib/payments.ts` (AI plans, donation bounds and
 presets, ad plans). Amounts are stored in paise. Ad payments are recorded but
 ads still require manual review before publishing.
 
-Links expire after 30 minutes (`PAYMENT_TTL_SECONDS`), which satisfies
+Links expire after 20 minutes (`PAYMENT_TTL_SECONDS`), which satisfies
 Razorpay's 15-minute `expire_by` minimum. The `callback_url` sends the payer
 back to `/account?paid=<intent>`, but fulfilment never relies on it: the webhook
 is authoritative, and `/api/payments/intent?reconcile=1` falls back to fetching

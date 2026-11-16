@@ -67,10 +67,10 @@ export const AD_PLANS: AdPlan[] = [
 
 /**
  * How long a payment link stays payable. Razorpay requires `expire_by` to be
- * at least 15 minutes in the future; 30 minutes leaves room for slow payers
+ * at least 15 minutes in the future; 20 minutes keeps checkout sessions short
  * without leaving stale links around.
  */
-export const PAYMENT_TTL_SECONDS = 30 * 60;
+export const PAYMENT_TTL_SECONDS = 20 * 60;
 
 export interface Purchase {
   purpose: PaymentPurpose;
