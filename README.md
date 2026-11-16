@@ -58,6 +58,11 @@ back to `/account?paid=<intent>`, but fulfilment never relies on it: the webhook
 is authoritative, and `/api/payments/intent?reconcile=1` falls back to fetching
 the Payment Link from Razorpay if a delivery is delayed.
 
+Each link carries the signed-in account email as `customer.email`, so Razorpay's
+records and the `payment_link.paid` payload match the credited account. Razorpay
+does not prefill it on the hosted checkout (their security policy), and links are
+retried once without customer details if a business requires `customer.name`.
+
 Required Pages secrets (set in the Cloudflare dashboard):
 
 - `SESSION_SECRET` and `ADMIN_TOKEN` for auth.

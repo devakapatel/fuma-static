@@ -99,6 +99,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       description: purchase.label,
       referenceId: intentId,
       expireBy: Math.floor(expiresAt.getTime() / 1000),
+      // The session email is the one shown on /account, so the payment record
+      // matches the account that will be credited.
+      customer: { email: auth.user.email },
       notes: {
         intent_id: intentId,
         user_id: auth.user.id,

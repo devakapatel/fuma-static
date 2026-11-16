@@ -71,6 +71,25 @@ async function razorpayRequest(
   return data;
 }
 
+export interface PaymentLinkCustomer {
+  name?: string;
+  email?: string;
+  contact?: string;
+}
+
+/**
+ * Some businesses are configured to require `customer.name` on Payment Links.
+ * We only hold the account email, so a rejected create is retried once without
+ * customer details instead of failing the checkout.
+ */
+function customerNameRequired(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as Error & { status?: number }).status === 400 &&
+    /customer name/i.test(error.message)
+  );
+}
+
 export async function createPaymentLink(
   env: Env,
   input: {
@@ -80,11 +99,11 @@ export async function createPaymentLink(
     expireBy: number;
     notes: Record<string, string>;
     callbackUrl?: string;
+    customer?: PaymentLinkCustomer;
   },
 ): Promise<RazorpayPaymentLink> {
-  const data = (await razorpayRequest(env, '/payment_links/', {
-    method: 'POST',
-    body: JSON.stringify({
+  const body = (customer?: PaymentLinkCustomer) =>
+    JSON.stringify({
       amount: input.amount,
       currency: 'INR',
       description: input.description.slice(0, 2048),
@@ -93,21 +112,42 @@ export async function createPaymentLink(
       notes: input.notes,
       notify: { sms: false, email: false },
       reminder_enable: false,
+      // Razorpay stores these on the link, payment and webhook payloads. They
+      // are never prefilled on the hosted checkout (Razorpay's policy).
+      ...(customer && Object.keys(customer).length > 0 ? { customer } : {}),
       ...(input.callbackUrl
         ? { callback_url: input.callbackUrl, callback_method: 'get' }
         : {}),
-    }),
-  })) as Partial<RazorpayPaymentLink> | null;
+    });
 
-  if (!data || typeof data.id !== 'string' || typeof data.short_url !== 'string') {
+  let data: unknown;
+  try {
+    data = await razorpayRequest(env, '/payment_links/', {
+      method: 'POST',
+      body: body(input.customer),
+    });
+  } catch (error) {
+    if (!input.customer || !customerNameRequired(error)) throw error;
+
+    console.warn(
+      'Razorpay requires customer.name on Payment Links; retrying without customer details',
+    );
+    data = await razorpayRequest(env, '/payment_links/', {
+      method: 'POST',
+      body: body(undefined),
+    });
+  }
+
+  const link = data as Partial<RazorpayPaymentLink> | null;
+  if (!link || typeof link.id !== 'string' || typeof link.short_url !== 'string') {
     throw new Error('Razorpay returned an invalid Payment Link response');
   }
 
   return {
-    id: data.id,
-    short_url: data.short_url,
-    expire_by: typeof data.expire_by === 'number' ? data.expire_by : null,
-    status: typeof data.status === 'string' ? data.status : 'created',
+    id: link.id,
+    short_url: link.short_url,
+    expire_by: typeof link.expire_by === 'number' ? link.expire_by : null,
+    status: typeof link.status === 'string' ? link.status : 'created',
   };
 }
 
