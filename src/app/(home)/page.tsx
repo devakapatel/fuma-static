@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, ArrowUpRight, Heart, HeartHandshake } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { u9Url } from '@/lib/links';
 import { source } from '@/lib/source';
 
 // Semesters that actually exist in the docs (matches the root-level `/sem-N`
@@ -29,7 +30,7 @@ export default function HomePage() {
       {/* ---------- Hero ---------- */}
       <section className="flex flex-col items-center text-center pt-28 pb-24 max-w-2xl">
         <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-balance">
-          Welcome to T9
+          T9
         </h1>
         <p className="mt-5 text-lg leading-relaxed text-fd-muted-foreground text-balance">
           Question Banks, Assignments, Practicals and more — now with an AI
@@ -50,6 +51,18 @@ export default function HomePage() {
               <ArrowRight className="size-3.5 opacity-60" />
             </Link>
           ))}
+          <a
+            href={u9Url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 px-4 py-2 text-sm font-medium transition-colors',
+              'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
+            )}
+          >
+            U9 (previous year question papers)
+            <ArrowUpRight className="size-3.5 opacity-60" />
+          </a>
         </div>
       </section>
 
