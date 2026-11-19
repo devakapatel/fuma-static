@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, ArrowUpRight, Heart, HeartHandshake } from 'lucide-react';
+import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { u9Url } from '@/lib/links';
 import { source } from '@/lib/source';
@@ -82,17 +82,6 @@ export default function HomePage() {
             <ArrowUpRight className="size-3.5 opacity-80" />
           </a>
           <Link
-            href="/account?donate=1"
-            className={cn(
-              'inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition-colors',
-              'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20',
-              'dark:text-emerald-300 dark:hover:bg-emerald-500/15',
-            )}
-          >
-            <Heart className="mr-1.5 size-3.5 opacity-70" />
-            Donate us
-          </Link>
-          <Link
             href="/account"
             className={cn(
               'inline-flex items-center rounded-full px-5 py-2.5 text-sm font-medium transition-colors',
@@ -101,16 +90,6 @@ export default function HomePage() {
           >
             Account
             <ArrowRight className="size-3.5 opacity-60" />
-          </Link>
-          <Link
-            href="/donors"
-            className={cn(
-              'inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition-colors',
-              'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground',
-            )}
-          >
-            <HeartHandshake className="mr-1.5 size-3.5 opacity-70" />
-            Donors
           </Link>
           <Link
             href="/about"

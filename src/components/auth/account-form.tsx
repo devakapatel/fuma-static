@@ -13,7 +13,6 @@ import { useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
   ArrowUpRight,
-  Heart,
   Loader2,
   LockKeyhole,
   LogOut,
@@ -71,7 +70,7 @@ function AccountContent() {
   const searchParams = useSearchParams();
   const next = safeNext(searchParams.get('next'));
   const paidIntent = searchParams.get('paid');
-  const donateIntent = searchParams.get('donate') === '1';
+
   const { user, loading, refresh, logout } = useAuth();
 
   // Razorpay sends the payer back with ?paid=<intent>. The webhook is what
@@ -260,7 +259,7 @@ function AccountContent() {
       <SignedInDashboard
         user={user}
         next={next}
-        initialPurpose={donateIntent ? 'donation' : null}
+
         onRefresh={refresh}
         onLogout={() => {
           void logout();
@@ -467,28 +466,17 @@ function ErrorMessage({ children }: { children: ReactNode }) {
 function SignedInDashboard({
   user,
   next,
-  initialPurpose,
   onRefresh,
   onLogout,
 }: {
   user: AuthUser;
   next: string;
-  initialPurpose: PaymentPurpose | null;
   onRefresh: () => Promise<void>;
   onLogout: () => void;
 }) {
   const [paymentPurpose, setPaymentPurpose] = useState<PaymentPurpose | null>(
-    initialPurpose,
+    null,
   );
-
-  // Drop ?donate=1 once the dialog has opened so a refresh does not reopen it.
-  useEffect(() => {
-    if (!initialPurpose) return;
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has('donate')) return;
-    url.searchParams.delete('donate');
-    window.history.replaceState(null, '', url.toString());
-  }, [initialPurpose]);
   const [aiPlan, setAiPlan] = useState<AiPlan | null>(null);
   const [aiPreview, setAiPreview] = useState<{ start: string; end: string } | null>(
     null,
@@ -598,22 +586,7 @@ function SignedInDashboard({
           </button>
         </section>
 
-        <button
-          type="button"
-          onClick={() => setPaymentPurpose('donation')}
-          className="group rounded-xl border p-5 text-left transition-colors hover:bg-fd-accent"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Heart className="size-5 text-fd-primary" />
-              <h3 className="font-semibold">Donate</h3>
-            </div>
-            <ArrowUpRight className="size-4 text-fd-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-          </div>
-          <p className="mt-3 text-sm text-fd-muted-foreground">
-            Support hosting and new notes.
-          </p>
-        </button>
+
 
         <a
           href={telegramUrl}
@@ -647,15 +620,7 @@ function SignedInDashboard({
             Browse docs
             <ArrowRight className="size-4" />
           </Link>
-          <Link
-            href="/donors"
-            className={cn(
-              buttonVariants({ variant: 'secondary', className: 'gap-2 rounded-full' }),
-            )}
-          >
-            <Heart className="size-4" />
-            Donors
-          </Link>
+
           <a
             href={telegramUrl}
             target="_blank"
@@ -670,13 +635,14 @@ function SignedInDashboard({
         </div>
       </section>
 
-      <PaymentDialog
-        purpose={paymentPurpose}
-        aiActive={user.paid}
-        paidUntil={user.paidUntil}
-        onClose={closePayment}
-        onPaid={onRefresh}
-      />
+      {paymentPurpose === 'ai' && (
+        <PaymentDialog
+          aiActive={user.paid}
+          paidUntil={user.paidUntil}
+          onClose={closePayment}
+          onPaid={onRefresh}
+        />
+      )}
     </div>
   );
 }

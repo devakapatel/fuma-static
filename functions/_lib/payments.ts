@@ -5,7 +5,7 @@ import { findUserById } from './users';
  * Advertisements are arranged directly with the admin, so there is no `ad`
  * payment purpose. Advertising never touches the payment flow.
  */
-export type PaymentPurpose = 'ai' | 'donation';
+export type PaymentPurpose = 'ai';
 
 export type PublicPaymentStatus =
   | 'created'
@@ -37,11 +37,6 @@ export const AI_PLANS: AiPlan[] = [
     blurb: 'Use the assistant on one device at a time for 30 days.',
   },
 ];
-
-export const DONATION = {
-  min: 1_000, // ₹10
-  presets: [5_000, 10_000, 25_000, 50_000],
-};
 
 /**
  * How long a payment link stays payable. Razorpay requires `expire_by` to be
@@ -94,27 +89,7 @@ export function resolvePurchase(input: PurchaseInput): ResolvePurchaseResult {
     };
   }
 
-  if (purpose === 'donation') {
-    if (typeof input.amount !== 'number' || !Number.isInteger(input.amount)) {
-      return { purchase: null, error: 'invalid_amount' };
-    }
-    if (input.amount < DONATION.min) {
-      return { purchase: null, error: 'invalid_amount' };
-    }
-    const anonymous = input.anonymous === true;
-    return {
-      purchase: {
-        purpose,
-        amount: input.amount,
-        currency: 'INR',
-        planId: null,
-        label: 'Donation',
-        durationDays: null,
-        metadata: anonymous ? JSON.stringify({ anonymous: 'true' }) : null,
-      },
-      error: null,
-    };
-  }
+
 
   return { purchase: null, error: 'invalid_purpose' };
 }
@@ -131,7 +106,7 @@ export function publicPaymentsConfig(configured: boolean, testMode: boolean) {
       days,
       blurb,
     })),
-    donation: { ...DONATION },
+
   };
 }
 
@@ -328,55 +303,7 @@ export async function listIntentsForUser(
   return result.results ?? [];
 }
 
-// ---------- public donor list ----------
 
-export interface DonationRow {
-  id: string;
-  amount: number;
-  paid_at: string | null;
-  metadata: string | null;
-  email: string;
-}
-
-/**
- * Paid donations with the donor's account email. Anonymous donations are
- * flagged in `metadata`; the caller decides whether to expose the email.
- */
-export async function listPaidDonations(
-  db: D1Database,
-  limit = 200,
-): Promise<{
-  donors: DonationRow[];
-  donationCount: number;
-  totalAmount: number;
-}> {
-  const [list, summary] = await Promise.all([
-    db
-      .prepare(
-        `SELECT p.id, p.amount, p.paid_at, p.metadata, u.email
-         FROM payment_intents p
-         JOIN users u ON u.id = p.user_id
-         WHERE p.purpose = 'donation' AND p.status = 'paid'
-         ORDER BY COALESCE(p.paid_at, p.created_at) DESC
-         LIMIT ?`,
-      )
-      .bind(limit)
-      .all<DonationRow>(),
-    db
-      .prepare(
-        `SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total
-         FROM payment_intents
-         WHERE purpose = 'donation' AND status = 'paid'`,
-      )
-      .first<{ count: number; total: number }>(),
-  ]);
-
-  return {
-    donors: list.results ?? [],
-    donationCount: summary?.count ?? 0,
-    totalAmount: summary?.total ?? 0,
-  };
-}
 
 /**
  * Atomically move an intent from `created` to `paid`.

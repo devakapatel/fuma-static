@@ -1,4 +1,4 @@
-export type PaymentPurpose = 'ai' | 'donation';
+export type PaymentPurpose = 'ai';
 
 export type PaymentStatus = 'created' | 'paid' | 'expired' | 'failed' | 'refunded';
 
@@ -15,10 +15,6 @@ export interface PaymentsConfig {
   configured: boolean;
   testMode: boolean;
   aiPlans: AiPlan[];
-  donation: {
-    min: number;
-    presets: number[];
-  };
 }
 
 export interface PaymentIntent {

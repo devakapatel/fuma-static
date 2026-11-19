@@ -16,14 +16,7 @@ import { apiUrl } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { addDays, formatDate, formatMoney } from '@/lib/format';
 import { buttonVariants } from '@/components/ui/button';
-import type {
-  PaymentIntent,
-  PaymentPurpose,
-  PaymentsConfig,
-} from './types';
-
-const fieldClass =
-  'w-full rounded-lg border bg-fd-background px-3 py-2 text-sm outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-fd-ring disabled:opacity-60';
+import type { PaymentIntent, PaymentsConfig } from './types';
 
 function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -40,8 +33,6 @@ function errorMessage(code: string | undefined): string {
       return 'Razorpay could not create the payment link. Please try again in a moment.';
     case 'too_many_attempts':
       return 'Too many attempts. Wait a few minutes and try again.';
-    case 'invalid_amount':
-      return 'Enter a valid donation amount.';
     case 'invalid_plan':
       return 'Choose a valid plan.';
     case 'unauthenticated':
@@ -56,7 +47,6 @@ function errorMessage(code: string | undefined): string {
 type Phase = 'loading' | 'choose' | 'creating' | 'paying' | 'paid' | 'error';
 
 interface PaymentDialogProps {
-  purpose: PaymentPurpose | null;
   aiActive: boolean;
   paidUntil: string | null;
   onClose: () => void;
@@ -64,7 +54,6 @@ interface PaymentDialogProps {
 }
 
 export function PaymentDialog({
-  purpose,
   aiActive,
   paidUntil,
   onClose,
@@ -78,8 +67,6 @@ export function PaymentDialog({
   const [now, setNow] = useState(0);
   const [copied, setCopied] = useState(false);
 
-  const [donationRupees, setDonationRupees] = useState('');
-  const [anonymous, setAnonymous] = useState(false);
   // Captured when the dialog opens so date arithmetic stays out of render.
   const [aiToday, setAiToday] = useState(0);
 
@@ -90,14 +77,11 @@ export function PaymentDialog({
 
   // Reset and load the current prices whenever the dialog opens.
   useEffect(() => {
-    if (!purpose) return;
-
     let cancelled = false;
     setPhase('loading');
     setError(null);
     setIntent(null);
     setCopied(false);
-    setAnonymous(false);
 
     fetch(apiUrl('/api/payments/config'), {
       credentials: 'include',
@@ -111,11 +95,6 @@ export function PaymentDialog({
         if (cancelled) return;
         setConfig(data);
         setAiToday(Date.now());
-        const preset =
-          data.donation.presets[1] ??
-          data.donation.presets[0] ??
-          data.donation.min;
-        setDonationRupees(String(Math.round(preset / 100)));
         setPhase('choose');
       })
       .catch(() => {
@@ -127,18 +106,18 @@ export function PaymentDialog({
     return () => {
       cancelled = true;
     };
-  }, [purpose, configAttempt]);
+  }, [configAttempt]);
 
   useEffect(() => {
-    if (!purpose || phase !== 'paying') return;
+    if (phase !== 'paying') return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [purpose, phase]);
+  }, [phase]);
 
   const intentId = intent?.id ?? null;
 
   useEffect(() => {
-    if (!purpose || phase !== 'paying' || !intentId) return;
+    if (phase !== 'paying' || !intentId) return;
 
     let cancelled = false;
     let ticks = 0;
@@ -174,11 +153,9 @@ export function PaymentDialog({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [purpose, phase, intentId]);
+  }, [phase, intentId]);
 
   useEffect(() => {
-    if (!purpose) return;
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
@@ -190,10 +167,10 @@ export function PaymentDialog({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [purpose, onClose]);
+  }, [onClose]);
 
   const startPayment = useCallback(async () => {
-    if (!purpose || !config) return;
+    if (!config) return;
 
     if (!config.configured) {
       setError('Payments are not configured on this deployment yet.');
@@ -201,31 +178,14 @@ export function PaymentDialog({
     }
 
     setError(null);
-    const body: Record<string, unknown> = { purpose };
+    const body: Record<string, unknown> = { purpose: 'ai' };
 
-    if (purpose === 'ai') {
-      const plan = config.aiPlans[0];
-      if (!plan) {
-        setError('AI access is not available right now.');
-        return;
-      }
-      body.planId = plan.id;
-    } else {
-      const rupees = Number(donationRupees);
-      const paise = Math.round(rupees * 100);
-      if (
-        !Number.isFinite(rupees) ||
-        !Number.isFinite(paise) ||
-        paise < config.donation.min
-      ) {
-        setError(
-          `Enter at least ${formatMoney(config.donation.min)}.`,
-        );
-        return;
-      }
-      body.amount = paise;
-      body.anonymous = anonymous;
+    const plan = config.aiPlans[0];
+    if (!plan) {
+      setError('AI access is not available right now.');
+      return;
     }
+    body.planId = plan.id;
 
     setPhase('creating');
     setIntent(null);
@@ -256,12 +216,7 @@ export function PaymentDialog({
       setError('Network error. Please try again.');
       setPhase('choose');
     }
-  }, [
-    purpose,
-    config,
-    donationRupees,
-    anonymous,
-  ]);
+  }, [config]);
 
   const copyPaymentLink = useCallback(async () => {
     if (!intent?.paymentUrl) return;
@@ -274,21 +229,57 @@ export function PaymentDialog({
     }
   }, [intent]);
 
-  if (!purpose) return null;
+  if (!config && phase === 'loading') {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-fd-overlay p-4"
+        onClick={onClose}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="payment-dialog-title"
+          className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border bg-fd-card p-6 text-fd-card-foreground shadow-xl"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 id="payment-dialog-title" className="text-lg font-semibold">
+                Get AI access
+              </h2>
+              <p className="mt-1 text-sm text-fd-muted-foreground">
+                Pay with UPI, cards, or netbanking and access activates
+                automatically.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className={cn(
+                buttonVariants({
+                  variant: 'ghost',
+                  size: 'icon-sm',
+                  className: 'shrink-0 rounded-full',
+                }),
+              )}
+            >
+              <X />
+            </button>
+          </div>
+          <div className="flex items-center justify-center gap-2 py-12 text-sm text-fd-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading payment options…
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const title =
-    purpose === 'ai'
-      ? aiActive
-        ? 'Extend AI access'
-        : 'Get AI access'
-      : 'Make a donation';
-
-  const subtitle =
-    purpose === 'ai'
-      ? aiActive
-        ? 'Days add to the end of your current access.'
-        : 'Pay with UPI, cards, or netbanking and access activates automatically.'
-      : 'Support hosting and new notes.';
+  const title = aiActive ? 'Extend AI access' : 'Get AI access';
+  const subtitle = aiActive
+    ? 'Days add to the end of your current access.'
+    : 'Pay with UPI, cards, or netbanking and access activates automatically.';
 
   const selectedAi = config?.aiPlans[0];
   const aiUntil = selectedAi
@@ -297,13 +288,7 @@ export function PaymentDialog({
         selectedAi.days,
       )
     : null;
-  const donationPaise = Math.round(Number(donationRupees) * 100);
-  const donationTooSmall =
-    purpose === 'donation' &&
-    (!Number.isFinite(donationPaise) ||
-      donationPaise < (config?.donation.min ?? 0));
-  const selectedAmount =
-    purpose === 'ai' ? selectedAi?.amount : donationPaise;
+  const selectedAmount = selectedAi?.amount;
 
   const remainingMs = intent
     ? Math.max(0, Date.parse(intent.expiresAt) - now)
@@ -382,7 +367,7 @@ export function PaymentDialog({
               </p>
             )}
 
-            {purpose === 'ai' && config.aiPlans[0] && (
+            {config.aiPlans[0] && (
               <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
                 <span>
                   <span className="block text-sm font-medium">
@@ -405,78 +390,6 @@ export function PaymentDialog({
               </div>
             )}
 
-            {purpose === 'donation' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {config.donation.presets.map((preset) => {
-                    const selected = donationPaise === preset;
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setDonationRupees(String(preset / 100))}
-                        className={cn(
-                          buttonVariants({
-                            variant: selected ? 'primary' : 'secondary',
-                            className: 'rounded-full',
-                          }),
-                        )}
-                      >
-                        {formatMoney(preset)}
-                      </button>
-                    );
-                  })}
-                </div>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium">Custom amount</span>
-                  <span className="relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-fd-muted-foreground">
-                      ₹
-                    </span>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={config.donation.min / 100}
-                      step="1"
-                      value={donationRupees}
-                      onChange={(event) => setDonationRupees(event.target.value)}
-                      className={cn(fieldClass, 'pl-7')}
-                    />
-                  </span>
-                  <span
-                    className={cn(
-                      'text-xs',
-                      donationTooSmall
-                        ? 'text-fd-error'
-                        : 'text-fd-muted-foreground',
-                    )}
-                  >
-                    Any amount from {formatMoney(config.donation.min)}. There is
-                    no upper limit.
-                  </span>
-                </label>
-
-                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={anonymous}
-                    onChange={(event) => setAnonymous(event.target.checked)}
-                    className="mt-0.5 size-4 shrink-0 accent-fd-primary"
-                  />
-                  <span>
-                    <span className="font-medium">
-                      Keep my donation anonymous
-                    </span>
-                    <span className="mt-1 block text-xs text-fd-muted-foreground">
-                      Donations are public: your email and amount will be listed
-                      on the Donors page. Tick this to appear as
-                      &ldquo;Anonymous&rdquo; instead.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
-
             {config.testMode && (
               <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                 Razorpay test mode: the payment page accepts Razorpay test cards
@@ -493,7 +406,7 @@ export function PaymentDialog({
             <button
               type="button"
               onClick={() => void startPayment()}
-              disabled={!config.configured || donationTooSmall}
+              disabled={!config.configured}
               className={cn(
                 buttonVariants({
                   variant: 'primary',
@@ -652,11 +565,9 @@ export function PaymentDialog({
               {formatMoney(intent.amount)} · {intent.label}
             </p>
             <p className="mt-4 text-sm text-fd-muted-foreground">
-              {purpose === 'ai'
-                ? paidUntil
-                  ? `AI access is active until ${formatDate(paidUntil)}.`
-                  : 'AI access is active for this account.'
-                : 'Thank you for supporting the project.'}
+              {paidUntil
+                ? `AI access is active until ${formatDate(paidUntil)}.`
+                : 'AI access is active for this account.'}
             </p>
             <button
               type="button"
