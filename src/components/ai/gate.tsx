@@ -12,7 +12,7 @@ import { AISearch, AISearchPanel, AISearchTrigger } from './search';
 const floatButton =
   'fixed bottom-4 gap-3 w-24 inset-e-[calc(--spacing(4)+var(--removed-body-scroll-bar-size,0px))] shadow-lg z-20 transition-[translate,opacity]';
 
-const telegramUrl = 'https://t.me/+yeaJ8DtX2uA0YjA9';
+const telegramUrl = 'https://t.me/t9_pages_dev';
 
 export function AIAccessGate() {
   const { user, loading } = useAuth();

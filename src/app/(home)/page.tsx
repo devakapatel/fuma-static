@@ -72,7 +72,7 @@ export default function HomePage() {
       <section className="pt-14 pb-4 flex flex-col items-center text-center">
         <div className="flex flex-wrap items-center justify-center gap-3">
           <a
-            href="https://t.me/+yeaJ8DtX2uA0YjA9"
+            href="https://t.me/t9_pages_dev"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-full bg-[#229ED9] px-6 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"

@@ -37,7 +37,7 @@ import type {
 const inputClass =
   'rounded-lg border bg-fd-background px-3 py-2 text-sm outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-fd-ring disabled:opacity-60';
 
-const telegramUrl = 'https://t.me/+yeaJ8DtX2uA0YjA9';
+const telegramUrl = 'https://t.me/t9_pages_dev';
 
 type Step = 'email' | 'signin' | 'signup';
 
